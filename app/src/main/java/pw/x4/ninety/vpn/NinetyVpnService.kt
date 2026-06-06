@@ -18,6 +18,7 @@ import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
 import io.nekohasekai.libbox.Notification as LibboxNotification
+import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.RoutePrefixIterator
 import io.nekohasekai.libbox.SetupOptions
@@ -102,7 +103,9 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 val server = Libbox.newCommandServer(this, this)
                 server.start()
                 commandServer = server
-                server.startOrReloadService(config, null)
+                // ВАЖНО: options != null — движок разыменовывает его (command_server.go:173),
+                // null → SIGSEGV. Пустой OverrideOptions (nil-итераторы безопасны).
+                server.startOrReloadService(config, OverrideOptions())
 
                 val name = Store.activeNode()?.name ?: supported.firstOrNull()?.name
                 VpnController.markConnected(name)
@@ -239,7 +242,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             try {
                 val supported = Store.nodes.filter { it.supported }
                 if (supported.isEmpty()) return@Thread
-                server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId), null)
+                server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId), OverrideOptions())
             } catch (e: Throwable) {
                 stopTunnel(e.message ?: "Ошибка перезагрузки")
             }
