@@ -206,7 +206,9 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 item.setMTU(try { ni.mtu } catch (_: Throwable) { 0 })
                 val addrs = ArrayList<String>()
                 for (ia in ni.interfaceAddresses) {
-                    val ip = ia.address?.hostAddress ?: continue
+                    // IPv6 link-local приходит с zone-суффиксом (fe80::..%dummy0);
+                    // netip.MustParsePrefix в движке паникует на zone в префиксе — срезаем.
+                    val ip = (ia.address?.hostAddress ?: continue).substringBefore('%')
                     addrs.add("$ip/${ia.networkPrefixLength.toInt()}")
                 }
                 item.setAddresses(FixedStringIterator(addrs))
