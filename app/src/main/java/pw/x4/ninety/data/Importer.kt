@@ -36,13 +36,15 @@ object Importer {
             return
         }
 
-        // URL подписки — скачиваем
+        // URL подписки — скачиваем, запоминаем URL для будущего refresh
         if (text.startsWith("http://") || text.startsWith("https://")) {
             onLoading()
             Thread({
                 try {
                     val body = fetch(text)
-                    main.post { onDone(Store.addSubscription(body), null) }
+                    val added = Store.addSubscription(body)
+                    Store.subscriptionUrl = text
+                    main.post { onDone(added, null) }
                 } catch (e: Exception) {
                     main.post { onDone(0, "Не загрузить подписку: ${e.message}") }
                 }
@@ -53,6 +55,25 @@ object Importer {
         // сырое содержимое (base64/plain список ссылок)
         val n = Store.addSubscription(text)
         onDone(n, if (n == 0) "Не распознано (ссылка/подписка)" else null)
+    }
+
+    /** Обновить список нод из сохранённого URL подписки. cb на main-потоке. */
+    fun refresh(
+        onLoading: () -> Unit,
+        onDone: (count: Int, error: String?) -> Unit,
+    ) {
+        val url = Store.subscriptionUrl
+        if (url.isNullOrBlank()) { onDone(0, "Подписка не задана — импортируйте по URL"); return }
+        onLoading()
+        Thread({
+            try {
+                val body = fetch(url)
+                val count = Store.replaceSubscription(body)
+                main.post { onDone(count, null) }
+            } catch (e: Exception) {
+                main.post { onDone(0, "Не обновить подписку: ${e.message}") }
+            }
+        }, "ninety-sub-refresh").start()
     }
 
     private fun fetch(url: String): String {

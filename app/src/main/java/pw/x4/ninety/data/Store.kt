@@ -29,6 +29,10 @@ object Store {
         activeId = prefs.activeNodeId
     }
 
+    var subscriptionUrl: String?
+        get() = prefs.subscriptionUrl
+        set(v) { prefs.subscriptionUrl = v }
+
     fun activeNode(): Node? = nodes.firstOrNull { it.id == activeId }
 
     fun setActive(id: String) {
@@ -45,8 +49,26 @@ object Store {
 
     /** Добавить из контента подписки. Возвращает число добавленных. */
     fun addSubscription(content: String): Int {
-        val parsed = LinkParser.parseSubscription(content)
+        val parsed = LinkParser.parseSubscription(content).map { it.copy(fromSub = true) }
         return addAll(parsed)
+    }
+
+    /**
+     * Refresh подписки: заменить ВСЕ ноды из подписки (fromSub) новым набором,
+     * вручную добавленные узлы не трогать. Активная сохраняется по id, если ещё
+     * есть в новом списке. Возвращает число нод в обновлённой подписке.
+     */
+    fun replaceSubscription(content: String): Int {
+        val parsed = LinkParser.parseSubscription(content).map { it.copy(fromSub = true) }
+        require(parsed.isNotEmpty()) { "Подписка пуста или не распознана" }
+        nodes.removeAll { it.fromSub }
+        for (n in parsed) if (nodes.none { it.id == n.id }) nodes.add(n)
+        if (activeId == null || nodes.none { it.id == activeId }) {
+            activeId = nodes.firstOrNull()?.id
+            prefs.activeNodeId = activeId
+        }
+        save()
+        return parsed.size
     }
 
     private fun addAll(list: List<Node>): Int {

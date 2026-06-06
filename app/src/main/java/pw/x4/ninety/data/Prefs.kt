@@ -20,10 +20,20 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_ACTIVE_NODE, null)
         set(v) = sp.edit().putString(KEY_ACTIVE_NODE, v).apply()
 
+    var subscriptionUrl: String?
+        get() = sp.getString(KEY_SUB_URL, null)
+        set(v) = sp.edit().putString(KEY_SUB_URL, v).apply()
+
+    var autoConnect: Boolean
+        get() = sp.getBoolean(KEY_AUTO_CONNECT, false)
+        set(v) = sp.edit().putBoolean(KEY_AUTO_CONNECT, v).apply()
+
     companion object {
         private const val KEY_THEME = "theme_pack"
         private const val KEY_AUTO_UPDATE = "auto_update_check"
         private const val KEY_ACTIVE_NODE = "active_node_id"
+        private const val KEY_SUB_URL = "subscription_url"
+        private const val KEY_AUTO_CONNECT = "auto_connect"
 
         @Volatile private var instance: Prefs? = null
         fun get(context: Context): Prefs =

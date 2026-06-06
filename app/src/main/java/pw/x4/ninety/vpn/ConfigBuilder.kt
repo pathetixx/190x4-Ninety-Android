@@ -29,49 +29,57 @@ object ConfigBuilder {
             nodeOutbounds.put(outbound(n, tag))
         }
 
+        // auto-режим = несколько нод И конкретная НЕ выбрана. Тогда нужен urltest+balancer.
+        // Если нода выбрана — чистый selector без них: иначе urltest пингует ВСЕ ноды
+        // (десятки vless+reality хендшейков) на старте и тормозит первое подключение.
+        val validSelected = selectedTag?.takeIf { nodeTags.contains(it) }
+        val useAuto = multi && validSelected == null
+
         val outbounds = JSONArray()
         if (multi) {
-            val tagsArr = JSONArray().apply { nodeTags.forEach { put(it) } }
-            // selector "proxy" = [auto, lowest, ...ноды], default = выбранная или auto
+            val selectorList = JSONArray().apply {
+                if (useAuto) { put("auto"); put("lowest") }
+                nodeTags.forEach { put(it) }
+            }
             outbounds.put(JSONObject().apply {
                 put("type", "selector"); put("tag", "proxy")
-                put("outbounds", JSONArray().apply {
-                    put("auto"); put("lowest"); nodeTags.forEach { put(it) }
+                put("outbounds", selectorList)
+                put("default", validSelected ?: "auto")
+                put("interrupt_exist_connections", true)
+            })
+            if (useAuto) {
+                val tagsArr = JSONArray().apply { nodeTags.forEach { put(it) } }
+                // balancer "auto" — lowest-delay per-connection
+                outbounds.put(JSONObject().apply {
+                    put("type", "balancer"); put("tag", "auto")
+                    put("outbounds", tagsArr)
+                    put("strategy", "lowest-delay")
+                    put("delay_acceptable_ratio", 2)
+                    put("interrupt_exist_connections", true)
                 })
-                put("default", selectedTag?.takeIf { nodeTags.contains(it) } ?: "auto")
-                put("interrupt_exist_connections", true)
-            })
-            // balancer "auto" — lowest-delay per-connection
-            outbounds.put(JSONObject().apply {
-                put("type", "balancer"); put("tag", "auto")
-                put("outbounds", tagsArr)
-                put("strategy", "lowest-delay")
-                put("delay_acceptable_ratio", 2)
-                put("interrupt_exist_connections", true)
-            })
-            // urltest "lowest" — health-checker (наполняет monitoring)
-            outbounds.put(JSONObject().apply {
-                put("type", "urltest"); put("tag", "lowest")
-                put("outbounds", JSONArray().apply { nodeTags.forEach { put(it) } })
-                put("url", TEST_URL); put("interval", INTERVAL); put("tolerance", 50)
-                put("interrupt_exist_connections", false)
-            })
+                // urltest "lowest" — health-checker для авто-выбора
+                outbounds.put(JSONObject().apply {
+                    put("type", "urltest"); put("tag", "lowest")
+                    put("outbounds", tagsArr)
+                    put("url", TEST_URL); put("interval", INTERVAL); put("tolerance", 50)
+                    put("interrupt_exist_connections", false)
+                })
+            }
         }
         for (i in 0 until nodeOutbounds.length()) outbounds.put(nodeOutbounds.get(i))
         outbounds.put(JSONObject().apply { put("type", "direct"); put("tag", "direct") })
 
         val config = JSONObject().apply {
-            // level=debug временно для отладки; output=файл → ядро пишет лог само
-            // (platform-callback в этой libbox логи не отдаёт). Вернуть info после.
+            // output=файл → ядро пишет лог само (platform-callback в этой libbox логи не отдаёт).
             put("log", JSONObject().apply {
-                put("level", "debug"); put("timestamp", true)
+                put("level", "info"); put("timestamp", true)
                 if (logPath != null) put("output", logPath)
             })
             put("dns", dns())
             put("inbounds", JSONArray().put(tunInbound()))
             put("outbounds", outbounds)
             put("route", route())
-            put("experimental", experimental(multi))
+            put("experimental", experimental())
         }
         return config.toString()
     }
@@ -116,18 +124,11 @@ object ConfigBuilder {
         put("default_domain_resolver", JSONObject().put("server", "dns-direct"))
     }
 
-    private fun experimental(multi: Boolean) = JSONObject().apply {
+    // monitoring (IP-гео всех нод через api.country.is/myip.expert/…) намеренно НЕ
+    // включаем: на старте поднимал десятки соединений через каждую ноду = шторм и батарея.
+    private fun experimental() = JSONObject().apply {
         put("cache_file", JSONObject().apply { put("enabled", true); put("store_rdrc", true) })
         put("unified_delay", JSONObject().put("enabled", true))
-        if (multi) {
-            put("monitoring", JSONObject().apply {
-                put("urls", JSONArray().apply {
-                    put(TEST_URL); put("https://www.google.com/generate_204")
-                    put("https://cp.cloudflare.com")
-                })
-                put("interval", INTERVAL); put("debounce_window", "500ms"); put("idle_timeout", "1800s")
-            })
-        }
     }
 
     // ── outbound по протоколу ──────────────────────────────────

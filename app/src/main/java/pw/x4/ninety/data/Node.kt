@@ -39,6 +39,7 @@ data class Node(
     val insecure: Boolean = false,
     val zeroRtt: Boolean = false,
     val raw: String = "",
+    val fromSub: Boolean = false,  // пришла из подписки → заменяется при refresh
 ) {
     /** Стабильный id для выбора/персиста. */
     val id: String get() = "$proto|$host|$port|$uuid$password".hashCode().toString()
@@ -54,7 +55,7 @@ data class Node(
         put("hostHeader", hostHeader); put("serviceName", serviceName); put("mode", mode)
         put("upMbps", upMbps); put("downMbps", downMbps); put("obfs", obfs); put("obfsPassword", obfsPassword)
         put("congestion", congestion); put("udpRelay", udpRelay); put("insecure", insecure)
-        put("zeroRtt", zeroRtt); put("raw", raw)
+        put("zeroRtt", zeroRtt); put("raw", raw); put("fromSub", fromSub)
     }
 
     companion object {
@@ -89,6 +90,7 @@ data class Node(
             insecure = o.optBoolean("insecure"),
             zeroRtt = o.optBoolean("zeroRtt"),
             raw = o.optString("raw"),
+            fromSub = o.optBoolean("fromSub"),
         )
     }
 }

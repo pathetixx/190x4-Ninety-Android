@@ -31,6 +31,7 @@ import pw.x4.ninety.data.Importer
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.Kicker
+import pw.x4.ninety.ui.components.PillButton
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyState
@@ -39,7 +40,6 @@ import pw.x4.ninety.ui.theme.NinetyTypography
 @Composable
 fun NodesScreen() {
     val context = LocalContext.current
-    val pack = NinetyState.pack
     val nodes = Store.nodes
 
     Column(
@@ -50,22 +50,13 @@ fun NodesScreen() {
         Spacer(Modifier.height(8.dp))
         Kicker("Узлы", accent = true)
         Spacer(Modifier.height(4.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Серверы", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
-            Text(
-                "ДОБАВИТЬ ИЗ БУФЕРА",
-                style = MonoStyle,
-                color = pack.accent,
-                modifier = Modifier
-                    .background(pack.accentSoft, RoundedCornerShape(8.dp))
-                    .border(1.dp, pack.accent, RoundedCornerShape(8.dp))
-                    .clickable { addFromClipboard(context) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            )
+        Text("Серверы", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PillButton("Добавить из буфера") { addFromClipboard(context) }
+            if (Store.subscriptionUrl != null) {
+                PillButton("Обновить") { refreshSub(context) }
+            }
         }
         Spacer(Modifier.height(16.dp))
 
@@ -132,6 +123,15 @@ private fun NodeRow(node: Node, selected: Boolean, onClick: () -> Unit) {
             )
         }
     }
+}
+
+private fun refreshSub(context: Context) {
+    Importer.refresh(
+        onLoading = { Toast.makeText(context, "Обновляю подписку…", Toast.LENGTH_SHORT).show() },
+        onDone = { count, error ->
+            Toast.makeText(context, error ?: "Обновлено узлов: $count", Toast.LENGTH_LONG).show()
+        },
+    )
 }
 
 private fun addFromClipboard(context: Context) {

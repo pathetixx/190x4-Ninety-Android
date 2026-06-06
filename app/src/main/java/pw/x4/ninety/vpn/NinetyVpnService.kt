@@ -292,6 +292,13 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         )
+        .addAction(
+            0, "Отключить",
+            PendingIntent.getService(
+                this, 1, Intent(this, NinetyVpnService::class.java).setAction(ACTION_STOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        )
         .build()
 
     private fun updateNotification(text: String) {

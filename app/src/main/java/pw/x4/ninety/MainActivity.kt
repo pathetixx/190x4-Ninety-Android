@@ -7,7 +7,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
+import pw.x4.ninety.data.Updater
 import pw.x4.ninety.ui.NinetyApp
 import pw.x4.ninety.ui.theme.NinetyTheme
 import pw.x4.ninety.vpn.NinetyVpnService
@@ -30,6 +32,28 @@ class MainActivity : ComponentActivity() {
                 NinetyApp(onToggleVpn = ::toggleVpn)
             }
         }
+        maybeAutoConnect()
+        maybeCheckUpdate()
+    }
+
+    /** Тихая проверка обновлений при запуске — Toast только если есть новее. */
+    private fun maybeCheckUpdate() {
+        if (!Prefs.get(this).autoUpdateCheck) return
+        Updater.check(onLoading = {}, onDone = { newer, _ ->
+            if (newer != null) Toast.makeText(
+                this, "Доступна версия ${newer.version} — Настройки → Обновление", Toast.LENGTH_LONG,
+            ).show()
+        })
+    }
+
+    /** Автоподключение к последней ноде при холодном старте. Тихо — только если
+     *  согласие на VPN уже выдано (prepare==null); диалог consent не навязываем. */
+    private fun maybeAutoConnect() {
+        if (Prefs.get(this).autoConnect &&
+            !VpnController.isActive &&
+            Store.activeNode() != null &&
+            VpnService.prepare(this) == null
+        ) startVpn()
     }
 
     private fun toggleVpn() {

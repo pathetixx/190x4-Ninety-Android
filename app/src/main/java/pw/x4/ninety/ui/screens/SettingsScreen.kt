@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,9 +34,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.BuildConfig
+import pw.x4.ninety.data.Importer
 import pw.x4.ninety.data.Prefs
+import pw.x4.ninety.data.Store
+import pw.x4.ninety.data.Updater
 import pw.x4.ninety.ui.components.Kicker
+import pw.x4.ninety.ui.components.PillButton
 import pw.x4.ninety.ui.components.SurfaceCard
+import pw.x4.ninety.ui.components.ToggleRow
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
@@ -98,6 +104,14 @@ fun SettingsScreen() {
                 }
             }
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        SurfaceCard { BehaviorSection(prefs) }
+        Spacer(Modifier.height(16.dp))
+        SurfaceCard { SubscriptionSection(context) }
+        Spacer(Modifier.height(16.dp))
+        SurfaceCard { UpdateSection(context, prefs) }
 
         Spacer(Modifier.height(16.dp))
 
@@ -179,6 +193,98 @@ private fun InfoRow(label: String, value: String) {
         Text(label, color = Ink.TextMid, style = NinetyTypography.bodyMedium)
         Text(value, color = Ink.TextHi, style = NinetyTypography.bodyMedium)
     }
+}
+
+@Composable
+private fun BehaviorSection(prefs: Prefs) {
+    Kicker("Поведение")
+    Spacer(Modifier.height(6.dp))
+    var auto by remember { mutableStateOf(prefs.autoConnect) }
+    ToggleRow("Автоподключение", auto, sub = "К последней ноде при запуске") {
+        auto = it; prefs.autoConnect = it
+    }
+}
+
+@Composable
+private fun SubscriptionSection(context: Context) {
+    var busy by remember { mutableStateOf(false) }
+    var info by remember { mutableStateOf(Store.subscriptionUrl) }
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Kicker("Подписка")
+        PillButton(if (busy) "обновляю…" else "обновить", enabled = !busy && info != null) {
+            Importer.refresh(
+                onLoading = { busy = true },
+                onDone = { count, err ->
+                    busy = false
+                    info = Store.subscriptionUrl
+                    Toast.makeText(context, err ?: "Обновлено узлов: $count", Toast.LENGTH_LONG).show()
+                },
+            )
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    Text(
+        info ?: "Импортируйте подписку по URL во вкладке «Узлы».",
+        color = Ink.TextLo, style = pw.x4.ninety.ui.theme.MonoStyle,
+    )
+}
+
+@Composable
+private fun UpdateSection(context: Context, prefs: Prefs) {
+    var status by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var found by remember { mutableStateOf<Updater.Release?>(null) }
+    var progress by remember { mutableIntStateOf(-1) }
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Kicker("Обновление")
+        PillButton(if (busy) "…" else "проверить", enabled = !busy) {
+            status = null; found = null
+            Updater.check(
+                onLoading = { busy = true },
+                onDone = { newer, err ->
+                    busy = false
+                    status = when {
+                        err != null -> err
+                        newer == null -> "Установлена последняя версия"
+                        else -> { found = newer; "Доступна версия ${newer.version}" }
+                    }
+                },
+            )
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    Text(
+        status ?: "Версия ${BuildConfig.VERSION_NAME}",
+        color = Ink.TextMid, style = NinetyTypography.bodyMedium,
+    )
+    found?.let { rel ->
+        Spacer(Modifier.height(10.dp))
+        PillButton(
+            if (progress in 0..100) "загрузка $progress%" else "установить ${rel.version}",
+            enabled = progress < 0,
+        ) {
+            Updater.downloadAndInstall(
+                context, rel,
+                onProgress = { progress = it },
+                onDone = { err ->
+                    progress = -1
+                    if (err != null) Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                },
+            )
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    var autoChk by remember { mutableStateOf(prefs.autoUpdateCheck) }
+    ToggleRow("Проверять при запуске", autoChk) { autoChk = it; prefs.autoUpdateCheck = it }
 }
 
 private fun copyDiag(context: Context) {
