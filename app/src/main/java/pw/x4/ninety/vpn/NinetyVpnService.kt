@@ -86,7 +86,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 Diag.startRunLog(this)
                 val supported = Store.nodes.filter { it.supported }
                 require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
-                val config = ConfigBuilder.build(supported, Store.activeId)
+                val config = ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this))
 
                 val work = File(filesDir, "work").apply { mkdirs() }
                 val opts = SetupOptions()
@@ -143,9 +143,9 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         var v4routes = 0
         drainRoutes(options.getInet4RouteAddress()) { builder.addRoute(it.address(), it.prefix()); v4routes++ }
         if (v4routes == 0) builder.addRoute("0.0.0.0", 0)
-        var v6routes = 0
-        drainRoutes(options.getInet6RouteAddress()) { builder.addRoute(it.address(), it.prefix()); v6routes++ }
-        if (v6routes == 0) try { builder.addRoute("::", 0) } catch (_: Throwable) {}
+        // v6-маршрут добавляем ТОЛЬКО если движок реально его дал. Безусловный ::/0
+        // заворачивал v6 в туннель без v6-outbound → v6-dial висел ~30с до фоллбэка на v4.
+        drainRoutes(options.getInet6RouteAddress()) { builder.addRoute(it.address(), it.prefix()) }
 
         try { builder.addDnsServer(options.getDNSServerAddress().getValue()) } catch (_: Throwable) {}
 
@@ -246,7 +246,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             try {
                 val supported = Store.nodes.filter { it.supported }
                 if (supported.isEmpty()) return@Thread
-                server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId), OverrideOptions())
+                server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this)), OverrideOptions())
             } catch (e: Throwable) {
                 stopTunnel(e.message ?: "Ошибка перезагрузки")
             }

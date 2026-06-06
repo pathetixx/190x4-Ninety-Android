@@ -15,7 +15,7 @@ object ConfigBuilder {
     private const val TEST_URL = "https://www.gstatic.com/generate_204"
     private const val INTERVAL = "600s"
 
-    fun build(nodes: List<Node>, selectedId: String?): String {
+    fun build(nodes: List<Node>, selectedId: String?, logPath: String? = null): String {
         require(nodes.isNotEmpty()) { "пустой список нод" }
         val multi = nodes.size >= 2
 
@@ -61,8 +61,12 @@ object ConfigBuilder {
         outbounds.put(JSONObject().apply { put("type", "direct"); put("tag", "direct") })
 
         val config = JSONObject().apply {
-            // level=debug временно для отладки «туннель есть, трафика нет»; вернуть info после.
-            put("log", JSONObject().apply { put("level", "debug"); put("timestamp", true) })
+            // level=debug временно для отладки; output=файл → ядро пишет лог само
+            // (platform-callback в этой libbox логи не отдаёт). Вернуть info после.
+            put("log", JSONObject().apply {
+                put("level", "debug"); put("timestamp", true)
+                if (logPath != null) put("output", logPath)
+            })
             put("dns", dns())
             put("inbounds", JSONArray().put(tunInbound()))
             put("outbounds", outbounds)
@@ -93,7 +97,9 @@ object ConfigBuilder {
                 put("detour", "direct")
             })
         })
-        put("strategy", "prefer_ipv4")
+        // ipv4_only: не отдаём AAAA → апп не пробует IPv6 первым (у нод нет v6-outbound,
+        // иначе v6-dial висит до таймаута ~30с и только потом фоллбэк на v4).
+        put("strategy", "ipv4_only")
         put("final", "dns-remote")
     }
 
