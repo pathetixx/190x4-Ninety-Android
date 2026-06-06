@@ -41,11 +41,24 @@ object Diag {
     fun lastCrash(ctx: Context): String? =
         crashFile(ctx).takeIf { it.exists() }?.readText()?.takeIf { it.isNotBlank() }
 
-    fun boxStderr(ctx: Context): String? =
-        stderrFile(ctx).takeIf { it.exists() }?.readText()?.takeLast(4000)?.takeIf { it.isNotBlank() }
+    /** Голова stderr — там panic/[signal] + аварийная горутина [running] (redirectStderr
+     *  перезатирает файл каждый запуск, причина в начале). Для дисплея, усечён. */
+    fun boxStderr(ctx: Context): String? {
+        val txt = stderrFile(ctx).takeIf { it.exists() }?.readText()?.takeIf { it.isNotBlank() } ?: return null
+        return if (txt.length > 8000) txt.take(8000) + "\n…(обрезано — жми «Скопировать» для полного)" else txt
+    }
+
+    /** Полный отчёт для буфера обмена (без усечения). */
+    fun fullReport(ctx: Context): String {
+        val sb = StringBuilder()
+        lastCrash(ctx)?.let { sb.append("== last_crash ==\n").append(it).append("\n\n") }
+        stderrFile(ctx).takeIf { it.exists() }?.let { sb.append("== box stderr ==\n").append(it.readText()) }
+        return sb.toString().ifBlank { "(пусто)" }
+    }
 
     fun clear(ctx: Context) {
         crashFile(ctx).delete()
         stderrFile(ctx).delete()
+        stderrFile(ctx).resolveSibling("box-stderr.log.old").delete()
     }
 }

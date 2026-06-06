@@ -1,5 +1,9 @@
 package pw.x4.ninety.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -117,14 +121,23 @@ fun SettingsScreen() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Kicker("Диагностика")
-                Text(
-                    "ОЧИСТИТЬ",
-                    style = pw.x4.ninety.ui.theme.MonoStyle,
-                    color = current.accent,
-                    modifier = Modifier.clickable {
-                        pw.x4.ninety.data.Diag.clear(context); refresh++
-                    },
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "СКОПИРОВАТЬ",
+                        style = pw.x4.ninety.ui.theme.MonoStyle,
+                        color = current.accent,
+                        modifier = Modifier.clickable { copyDiag(context) },
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        "ОЧИСТИТЬ",
+                        style = pw.x4.ninety.ui.theme.MonoStyle,
+                        color = Ink.TextLo,
+                        modifier = Modifier.clickable {
+                            pw.x4.ninety.data.Diag.clear(context); refresh++
+                        },
+                    )
+                }
             }
             Spacer(Modifier.height(10.dp))
             if (crash == null && stderr == null) {
@@ -159,4 +172,10 @@ private fun InfoRow(label: String, value: String) {
         Text(label, color = Ink.TextMid, style = NinetyTypography.bodyMedium)
         Text(value, color = Ink.TextHi, style = NinetyTypography.bodyMedium)
     }
+}
+
+private fun copyDiag(context: Context) {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    cm.setPrimaryClip(ClipData.newPlainText("ninety-diag", pw.x4.ninety.data.Diag.fullReport(context)))
+    Toast.makeText(context, "Диагностика скопирована", Toast.LENGTH_SHORT).show()
 }
