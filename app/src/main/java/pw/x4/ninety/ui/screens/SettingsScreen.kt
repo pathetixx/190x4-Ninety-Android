@@ -20,6 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -99,6 +103,45 @@ fun SettingsScreen() {
             InfoRow("Версия", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             InfoRow("Ядро", "sing-box / libbox")
             InfoRow("Канал", "Early access")
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        var refresh by remember { mutableIntStateOf(0) }
+        val crash = remember(refresh) { pw.x4.ninety.data.Diag.lastCrash(context) }
+        val stderr = remember(refresh) { pw.x4.ninety.data.Diag.boxStderr(context) }
+        SurfaceCard {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Kicker("Диагностика")
+                Text(
+                    "ОЧИСТИТЬ",
+                    style = pw.x4.ninety.ui.theme.MonoStyle,
+                    color = current.accent,
+                    modifier = Modifier.clickable {
+                        pw.x4.ninety.data.Diag.clear(context); refresh++
+                    },
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            if (crash == null && stderr == null) {
+                Text("Падений не зафиксировано.", color = Ink.TextMid, style = NinetyTypography.bodyMedium)
+            } else {
+                crash?.let {
+                    Text("Последний краш:", color = Ink.Err, style = NinetyTypography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = Ink.TextMid, style = pw.x4.ninety.ui.theme.MonoStyle)
+                    Spacer(Modifier.height(10.dp))
+                }
+                stderr?.let {
+                    Text("stderr ядра (хвост):", color = Ink.TextLo, style = NinetyTypography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = Ink.TextMid, style = pw.x4.ninety.ui.theme.MonoStyle)
+                }
+            }
         }
 
         Spacer(Modifier.height(24.dp))

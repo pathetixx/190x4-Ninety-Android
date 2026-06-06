@@ -1,6 +1,7 @@
 package pw.x4.ninety
 
 import android.app.Application
+import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.theme.NinetyState
@@ -9,6 +10,8 @@ import pw.x4.ninety.ui.theme.packById
 class NinetyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Перехват JVM-крашей в файл (диагностика без adb).
+        Diag.installCrashHandler(this)
         // Тема из Prefs до первой композиции.
         NinetyState.pack = packById(Prefs.get(this).themePack)
         // Загрузка узлов/активного.

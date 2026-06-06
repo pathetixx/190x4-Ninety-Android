@@ -29,6 +29,7 @@ import io.nekohasekai.libbox.NetworkInterface as LbNetworkInterface
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import pw.x4.ninety.MainActivity
 import pw.x4.ninety.R
+import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Store
 import java.io.File
 import java.net.NetworkInterface as JNetworkInterface
@@ -70,10 +71,17 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private fun startTunnel() {
         if (commandServer != null) return
         VpnController.markConnecting()
-        ensureChannel()
-        startForeground(NOTIF_ID, notification("Подключение…"))
+        try {
+            ensureChannel()
+            startForeground(NOTIF_ID, notification("Подключение…"))
+        } catch (e: Throwable) {
+            Diag.writeCrash(this, "startForeground", e)
+            stopTunnel("Не удалось запустить службу: ${e.message}")
+            return
+        }
         Thread({
             try {
+                try { Libbox.redirectStderr(Diag.stderrFile(this).absolutePath) } catch (_: Throwable) {}
                 val supported = Store.nodes.filter { it.supported }
                 require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
                 val config = ConfigBuilder.build(supported, Store.activeId)
@@ -100,6 +108,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 VpnController.markConnected(name)
                 updateNotification("Защищено${name?.let { " · $it" } ?: ""}")
             } catch (e: Throwable) {
+                Diag.writeCrash(this, "startTunnel", e)
                 stopTunnel(e.message ?: "Ошибка запуска туннеля")
             }
         }, "ninety-vpn-start").start()
