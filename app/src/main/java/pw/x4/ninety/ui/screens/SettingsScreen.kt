@@ -114,6 +114,7 @@ fun SettingsScreen() {
         var refresh by remember { mutableIntStateOf(0) }
         val crash = remember(refresh) { pw.x4.ninety.data.Diag.lastCrash(context) }
         val stderr = remember(refresh) { pw.x4.ninety.data.Diag.boxStderr(context) }
+        val runLog = remember(refresh) { pw.x4.ninety.data.Diag.boxRun(context) }
         SurfaceCard {
             Row(
                 Modifier.fillMaxWidth(),
@@ -140,8 +141,8 @@ fun SettingsScreen() {
                 }
             }
             Spacer(Modifier.height(10.dp))
-            if (crash == null && stderr == null) {
-                Text("Падений не зафиксировано.", color = Ink.TextMid, style = NinetyTypography.bodyMedium)
+            if (crash == null && stderr == null && runLog == null) {
+                Text("Логов пока нет — подключись к узлу.", color = Ink.TextMid, style = NinetyTypography.bodyMedium)
             } else {
                 crash?.let {
                     Text("Последний краш:", color = Ink.Err, style = NinetyTypography.titleMedium)
@@ -150,7 +151,13 @@ fun SettingsScreen() {
                     Spacer(Modifier.height(10.dp))
                 }
                 stderr?.let {
-                    Text("stderr ядра (хвост):", color = Ink.TextLo, style = NinetyTypography.titleMedium)
+                    Text("stderr ядра (паника):", color = Ink.TextLo, style = NinetyTypography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = Ink.TextMid, style = pw.x4.ninety.ui.theme.MonoStyle)
+                    Spacer(Modifier.height(10.dp))
+                }
+                runLog?.let {
+                    Text("лог ядра (хвост):", color = Ink.TextLo, style = NinetyTypography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     Text(it, color = Ink.TextMid, style = pw.x4.ninety.ui.theme.MonoStyle)
                 }

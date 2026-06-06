@@ -61,7 +61,8 @@ object ConfigBuilder {
         outbounds.put(JSONObject().apply { put("type", "direct"); put("tag", "direct") })
 
         val config = JSONObject().apply {
-            put("log", JSONObject().apply { put("level", "info"); put("timestamp", true) })
+            // level=debug временно для отладки «туннель есть, трафика нет»; вернуть info после.
+            put("log", JSONObject().apply { put("level", "debug"); put("timestamp", true) })
             put("dns", dns())
             put("inbounds", JSONArray().put(tunInbound()))
             put("outbounds", outbounds)
@@ -87,7 +88,9 @@ object ConfigBuilder {
                 put("path", "/dns-query"); put("detour", "proxy"); put("domain_resolver", "dns-direct")
             })
             put(JSONObject().apply {
+                // detour:direct ОБЯЗАТЕЛЕН — иначе «прямой» резолвер сам идёт через route.final=proxy
                 put("tag", "dns-direct"); put("type", "udp"); put("server", "77.88.8.8")
+                put("detour", "direct")
             })
         })
         put("strategy", "prefer_ipv4")
@@ -102,7 +105,9 @@ object ConfigBuilder {
         })
         put("final", "proxy")
         put("auto_detect_interface", true)
-        put("default_domain_resolver", JSONObject().put("server", "dns-remote"))
+        // Резолв доменов в адресах прокси-серверов — НАПРЯМУЮ, иначе deadlock:
+        // чтобы поднять proxy надо зарезолвить его домен, а dns-remote ходит через тот же proxy.
+        put("default_domain_resolver", JSONObject().put("server", "dns-direct"))
     }
 
     private fun experimental(multi: Boolean) = JSONObject().apply {

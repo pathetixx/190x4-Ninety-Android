@@ -83,6 +83,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         Thread({
             try {
                 try { Libbox.redirectStderr(Diag.stderrFile(this).absolutePath) } catch (_: Throwable) {}
+                Diag.startRunLog(this)
                 val supported = Store.nodes.filter { it.supported }
                 require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
                 val config = ConfigBuilder.build(supported, Store.activeId)
@@ -126,6 +127,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         monitorListener = null
         try { pfd?.close() } catch (_: Throwable) {}
         pfd = null
+        Diag.stopRunLog()
         stopForeground(STOP_FOREGROUND_REMOVE)
         VpnController.markIdle(error)
         stopSelf()
@@ -255,7 +257,9 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         SystemProxyStatus().apply { setAvailable(false); setEnabled(false) }
 
     override fun setSystemProxyEnabled(enabled: Boolean) {}
-    override fun writeDebugMessage(message: String?) {}
+    // Единственный канал логов ядра sing-box (level/route/dns/outbound) — раньше
+    // выбрасывали → «логов нет». Пишем в файл, видно в Настройках/«Скопировать».
+    override fun writeDebugMessage(message: String?) { Diag.appendRunLog(message) }
 
     // ── helpers ────────────────────────────────────────────────
     private inline fun drainRoutes(it: RoutePrefixIterator?, f: (io.nekohasekai.libbox.RoutePrefix) -> Unit) {
