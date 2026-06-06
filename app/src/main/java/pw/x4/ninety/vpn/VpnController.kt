@@ -1,5 +1,7 @@
 package pw.x4.ninety.vpn
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,25 +10,30 @@ import androidx.compose.runtime.setValue
 enum class ConnState { Idle, Connecting, Connected, Stopping }
 
 /**
- * Заглушка контроллера туннеля (милстоун 1). Хранит наблюдаемое состояние для UI.
- * Милстоун 2 заменит тело на реальный VpnService + libbox (BoxService/CommandClient),
- * сохранив публичный контракт [state]/[toggle].
+ * Наблюдаемое состояние туннеля для UI. Сеттеры зовёт [NinetyVpnService] (из
+ * фонового потока → постим в main). Старт/стоп инициирует Activity (нужен
+ * VpnService.prepare consent), поэтому здесь только отражение состояния.
  */
 object VpnController {
     var state by mutableStateOf(ConnState.Idle)
         private set
-
-    /** Текущий сервер для hero/статуса (имя ноды). null = не выбран. */
     var activeServer by mutableStateOf<String?>(null)
         private set
+    var lastError by mutableStateOf<String?>(null)
+        private set
 
-    /** Заглушка переключения: имитирует Connecting->Connected без реального ядра. */
-    fun toggle() {
-        state = when (state) {
-            ConnState.Idle -> ConnState.Connecting
-            ConnState.Connecting -> ConnState.Connected
-            ConnState.Connected -> ConnState.Idle
-            ConnState.Stopping -> ConnState.Idle
-        }
+    private val main = Handler(Looper.getMainLooper())
+    private fun post(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else main.post(block)
+    }
+
+    val isActive: Boolean get() = state == ConnState.Connecting || state == ConnState.Connected
+
+    fun markConnecting() = post { state = ConnState.Connecting; lastError = null }
+    fun markConnected(name: String?) = post { state = ConnState.Connected; activeServer = name }
+    fun markIdle(error: String?) = post {
+        state = ConnState.Idle
+        activeServer = null
+        if (error != null) lastError = error
     }
 }

@@ -47,7 +47,7 @@ private enum class Dest(val label: String, val icon: ImageVector) {
 }
 
 @Composable
-fun NinetyApp() {
+fun NinetyApp(onToggleVpn: () -> Unit) {
     var dest by rememberSaveable { mutableStateOf(Dest.Connect) }
 
     Scaffold(
@@ -60,7 +60,7 @@ fun NinetyApp() {
                 .padding(inner)
         ) {
             when (dest) {
-                Dest.Connect -> ConnectScreen()
+                Dest.Connect -> ConnectScreen(onToggle = onToggleVpn)
                 Dest.Nodes -> NodesScreen()
                 Dest.Settings -> SettingsScreen()
             }

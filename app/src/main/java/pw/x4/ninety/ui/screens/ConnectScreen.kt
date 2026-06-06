@@ -34,7 +34,7 @@ import pw.x4.ninety.vpn.ConnState
 import pw.x4.ninety.vpn.VpnController
 
 @Composable
-fun ConnectScreen() {
+fun ConnectScreen(onToggle: () -> Unit) {
     val pack = NinetyState.pack
     val state = VpnController.state
 
@@ -76,7 +76,7 @@ fun ConnectScreen() {
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { VpnController.toggle() },
+                ) { onToggle() },
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {
@@ -110,9 +110,17 @@ fun ConnectScreen() {
 
         Spacer(Modifier.height(40.dp))
         Text(
-            VpnController.activeServer ?: "Сервер не выбран",
+            VpnController.activeServer
+                ?: pw.x4.ninety.data.Store.activeNode()?.name
+                ?: "Сервер не выбран",
             style = MonoStyle,
             color = Ink.TextMid,
         )
+        VpnController.lastError?.let {
+            if (state == ConnState.Idle) {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MonoStyle, color = Ink.Err)
+            }
+        }
     }
 }

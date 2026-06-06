@@ -19,6 +19,11 @@ android {
         // 0.1.0 -> 100. Свежий проект, без офсет-ловушки (нет прошлых установок).
         versionCode = 100
         versionName = "0.1.0"
+
+        // Только мобильные ABI — режет нативные .so ядра (libbox.aar несёт 4 ABI).
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
