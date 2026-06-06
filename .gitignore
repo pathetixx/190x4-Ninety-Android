@@ -1,0 +1,12 @@
+*.iml
+.gradle/
+.idea/
+build/
+local.properties
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Артефакт ядра — собирается в CI (gomobile bind), в репо не храним.
+app/libs/*.aar

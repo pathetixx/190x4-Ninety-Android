@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Плейсхолдер: targeting-кольцо Ninety в акценте kurogane.
+     Финальный арт (хром-самурай) генерит юзер нейронкой — впишем позже. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- внешнее кольцо -->
+    <path
+        android:strokeColor="#C0304A"
+        android:strokeWidth="5"
+        android:fillColor="#00000000"
+        android:pathData="M24,54a30,30 0 1,0 60,0a30,30 0 1,0 -60,0" />
+    <!-- внутреннее кольцо -->
+    <path
+        android:strokeColor="#DE5772"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:pathData="M37,54a17,17 0 1,0 34,0a17,17 0 1,0 -34,0" />
+    <!-- крестовина -->
+    <path
+        android:strokeColor="#C0304A"
+        android:strokeWidth="3"
+        android:pathData="M54,30 L54,40 M54,68 L54,78 M30,54 L40,54 M68,54 L78,54" />
+    <!-- центр -->
+    <path
+        android:fillColor="#DE5772"
+        android:pathData="M54,48a6,6 0 1,0 0.1,0z" />
+</vector>

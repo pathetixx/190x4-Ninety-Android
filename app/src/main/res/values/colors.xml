@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ink-0 / ink-1 из tokens.css — фон окна и подложка иконки -->
+    <color name="ink0">#FF08080A</color>
+    <color name="ic_launcher_bg">#FF0E0E11</color>
+</resources>

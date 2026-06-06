@@ -1,0 +1,111 @@
+name: Build Ninety Android
+
+# Релиз — только на push semver-тега vX.Y.Z. Для ad-hoc проверки — workflow_dispatch.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  # Ядро: hiddify-sing-box. Тег перемещаем → пин на конкретный SHA (supply-chain).
+  HSB_TAG: v1.13.0.h5
+  HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
+  NDK_VERSION: 28.0.13004108
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Install Android SDK packages + NDK
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Build libbox.aar (gomobile bind, hiddify-sing-box)
+        run: |
+          set -e
+          echo "Cloning hiddify-sing-box ${HSB_TAG}…"
+          git clone --depth 1 --branch "${HSB_TAG}" https://github.com/hiddify/hiddify-sing-box.git hsb
+          cd hsb
+          HEAD="$(git rev-parse HEAD)"
+          if [ "$HEAD" != "${HSB_SHA}" ]; then
+            echo "::error::hiddify-sing-box ${HSB_TAG} = $HEAD, ожидался ${HSB_SHA} (тег перемещён?)"
+            exit 1
+          fi
+          echo "Verified hiddify-sing-box commit $HEAD."
+
+          # gomobile/gobind — форк sagernet (sing-box собирается только им).
+          go install -v github.com/sagernet/gomobile/cmd/gomobile@v0.1.11
+          go install -v github.com/sagernet/gomobile/cmd/gobind@v0.1.11
+          export PATH="$PATH:$(go env GOPATH)/bin"
+
+          # build_libbox требует java "openjdk 17"; temurin 17 подходит.
+          java --version
+
+          # Собирает libbox.aar (API23) + libbox-legacy.aar (API21).
+          go run ./cmd/internal/build_libbox -target android
+
+          ls -lh libbox*.aar
+          mkdir -p "$GITHUB_WORKSPACE/app/libs"
+          cp libbox.aar "$GITHUB_WORKSPACE/app/libs/libbox.aar"
+          echo "libbox.aar -> app/libs/ ($(du -h libbox.aar | cut -f1))"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Assemble debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Stage APK
+        id: stage
+        run: |
+          set -e
+          APK="$(find app/build/outputs/apk/debug -name '*.apk' | head -1)"
+          VER="${GITHUB_REF_NAME#v}"
+          OUT="ninety-android-${VER}.apk"
+          cp "$APK" "$OUT"
+          echo "apk=$OUT" >> "$GITHUB_OUTPUT"
+          echo "Built $OUT ($(du -h "$OUT" | cut -f1))"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-apk
+          path: ${{ steps.stage.outputs.apk }}
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Ninety Android ${{ github.ref_name }}
+          files: ${{ steps.stage.outputs.apk }}
+          prerelease: false
+          make_latest: true

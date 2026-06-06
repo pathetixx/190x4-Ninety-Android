@@ -1,0 +1,116 @@
+package pw.x4.ninety.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import pw.x4.ninety.ui.screens.ConnectScreen
+import pw.x4.ninety.ui.screens.NodesScreen
+import pw.x4.ninety.ui.screens.SettingsScreen
+import pw.x4.ninety.ui.theme.Ink
+import pw.x4.ninety.ui.theme.NinetyState
+
+private enum class Dest(val label: String, val icon: ImageVector) {
+    Connect("Подключение", Icons.Rounded.Bolt),
+    Nodes("Узлы", Icons.Rounded.Hub),
+    Settings("Настройки", Icons.Rounded.Settings),
+}
+
+@Composable
+fun NinetyApp() {
+    var dest by rememberSaveable { mutableStateOf(Dest.Connect) }
+
+    Scaffold(
+        containerColor = Ink.Ink0,
+        bottomBar = { NinetyBottomBar(current = dest, onSelect = { dest = it }) },
+    ) { inner ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(inner)
+        ) {
+            when (dest) {
+                Dest.Connect -> ConnectScreen()
+                Dest.Nodes -> NodesScreen()
+                Dest.Settings -> SettingsScreen()
+            }
+        }
+    }
+}
+
+@Composable
+private fun NinetyBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
+    val pack = NinetyState.pack
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    0f to Ink.Ink0.copy(alpha = 0f),
+                    0.35f to Ink.Ink1,
+                    1f to Ink.Ink1,
+                )
+            )
+            .navigationBarsPadding()
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Dest.entries.forEach { d ->
+                val active = d == current
+                val tint = if (active) pack.accent else Ink.TextLo
+                Column(
+                    Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSelect(d) }
+                        .padding(horizontal = 18.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(d.icon, contentDescription = d.label, tint = tint, modifier = Modifier.size(24.dp))
+                    Text(
+                        d.label,
+                        color = tint,
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,78 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+android {
+    namespace = "pw.x4.ninety"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "pw.x4.ninety"
+        // minSdk 26: adaptive-иконка чистым вектором (без бинарных PNG-фолбэков),
+        // VpnService+libbox полностью поддержаны. Потеря API24/25 (<2%) несущественна.
+        minSdk = 26
+        targetSdk = 35
+
+        // Версионирование: монотонный versionCode = major*10000 + minor*100 + patch.
+        // 0.1.0 -> 100. Свежий проект, без офсет-ловушки (нет прошлых установок).
+        versionCode = 100
+        versionName = "0.1.0"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            isMinifyEnabled = false
+            applicationIdSuffix = ".debug"
+        }
+        getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            // Подпись релиза (стабильный keystore из GH Secret) подключается в CI
+            // через signingConfigs — добавим в милстоуне 2 (OTA install-over).
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+dependencies {
+    // Ядро VPN — libbox.aar (gomobile bind hiddify-sing-box), кладётся CI в app/libs/.
+    // fileTree пустой локально (.gitignore) — milestone 1 код его не импортирует.
+    implementation(fileTree("libs") { include("*.aar") })
+
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
+    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}
