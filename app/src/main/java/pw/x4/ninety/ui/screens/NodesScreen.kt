@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import pw.x4.ninety.data.Importer
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.Kicker
@@ -136,19 +137,12 @@ private fun NodeRow(node: Node, selected: Boolean, onClick: () -> Unit) {
 private fun addFromClipboard(context: Context) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
-    if (text.isEmpty()) {
-        Toast.makeText(context, "Буфер пуст", Toast.LENGTH_SHORT).show()
-        return
-    }
-    val one = Store.addLink(text)
-    if (one) {
-        Toast.makeText(context, "Узел добавлен", Toast.LENGTH_SHORT).show()
-        return
-    }
-    val n = Store.addSubscription(text)
-    Toast.makeText(
-        context,
-        if (n > 0) "Добавлено узлов: $n" else "Не распознано (ссылка/подписка)",
-        Toast.LENGTH_SHORT,
-    ).show()
+    Importer.importText(
+        raw = text,
+        onLoading = { Toast.makeText(context, "Загружаю подписку…", Toast.LENGTH_SHORT).show() },
+        onDone = { added, error ->
+            val msg = error ?: if (added > 0) "Добавлено узлов: $added" else "Ничего не добавлено"
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        },
+    )
 }
