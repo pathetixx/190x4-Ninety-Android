@@ -20,10 +20,7 @@ android {
         versionCode = 100
         versionName = "0.1.0"
 
-        // Только мобильные ABI — режет нативные .so ядра (libbox.aar несёт 4 ABI).
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-        }
+        // ABI задаёт splits.abi ниже (abiFilters и splits взаимоисключающи).
     }
 
     // Per-ABI APK вместо universal: иначе libbox тащит обе ABI в один APK (148 МБ).
