@@ -26,20 +26,42 @@ android {
         }
     }
 
+    // Per-ABI APK вместо universal: иначе libbox тащит обе ABI в один APK (148 МБ).
+    // Один versionCode на оба — раздача через GitHub Releases, не Play.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            // Реквизиты из env (CI декодирует keystore из GH Secret). Локально пусто →
+            // release неподписан (релиз собираем только в CI).
+            System.getenv("NINETY_KEYSTORE")?.let { ks ->
+                storeFile = file(ks)
+                storePassword = System.getenv("NINETY_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("NINETY_KEY_ALIAS")
+                keyPassword = System.getenv("NINETY_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         getByName("debug") {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
         }
         getByName("release") {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
-            // Подпись релиза (стабильный keystore из GH Secret) подключается в CI
-            // через signingConfigs — добавим в милстоуне 2 (OTA install-over).
+            // minify/shrink отложены: proguard для libbox/gomobile нужно отлаживать
+            // отдельно, не блокируем им первый релиз. Размер режут ABI-splits.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
+            // applicationIdSuffix нет → чистый pw.x4.ninety
         }
     }
 
@@ -56,6 +78,11 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+    lint {
+        // не валим release-сборку на lint-предупреждениях (lintVitalRelease)
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 }
 

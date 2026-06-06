@@ -81,12 +81,13 @@ object Updater {
             val tag = json.optString("tag_name").removePrefix("v")
             if (tag.isBlank()) throw IOException("нет тега релиза")
             val assets = json.optJSONArray("assets") ?: throw IOException("нет файлов")
-            var apk: String? = null
+            val apks = ArrayList<String>()
             for (i in 0 until assets.length()) {
                 val url = assets.getJSONObject(i).optString("browser_download_url")
-                if (url.endsWith(".apk")) { apk = url; break }
+                if (url.endsWith(".apk")) apks.add(url)
             }
-            return Release(tag, apk ?: throw IOException("в релизе нет APK"), json.optString("body"))
+            if (apks.isEmpty()) throw IOException("в релизе нет APK")
+            return Release(tag, pickAbi(apks), json.optString("body"))
         }
     }
 
@@ -123,6 +124,14 @@ object Updater {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+    }
+
+    /** Выбрать APK под ABI устройства (релиз — per-ABI: …-arm64-v8a.apk / …-armeabi-v7a.apk). */
+    private fun pickAbi(apks: List<String>): String {
+        for (abi in android.os.Build.SUPPORTED_ABIS) {
+            apks.firstOrNull { it.contains(abi) }?.let { return it }
+        }
+        return apks.first()
     }
 
     /** Семвер-сравнение a > b (по числовым компонентам). */
