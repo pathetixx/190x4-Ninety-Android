@@ -3,6 +3,7 @@ package pw.x4.ninety.vpn
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Node
 import java.io.File
 
@@ -28,7 +29,6 @@ object XrayController {
     private fun binPath(ctx: Context) = File(ctx.applicationInfo.nativeLibraryDir, "libxray.so")
 
     private fun configFile(ctx: Context) = File(ctx.filesDir, "xray-config.json")
-    fun logFile(ctx: Context) = File(ctx.filesDir, "xray.log")
 
     /**
      * Поднять xray под xhttp-ноды профиля. Идемпотентно (перезапускает). Если xhttp-нод
@@ -46,7 +46,7 @@ object XrayController {
         configFile(ctx).writeText(buildConfig(bridges))
         val pb = ProcessBuilder(bin.absolutePath, "run", "-c", configFile(ctx).absolutePath)
         pb.redirectErrorStream(true)
-        pb.redirectOutput(logFile(ctx))                 // лог xray переживает краш → виден в диагностике
+        pb.redirectOutput(Diag.xrayFile(ctx))           // лог xray → виден в Настройки → Логи
         pb.directory(ctx.filesDir)
         proc = pb.start()
         return true
@@ -79,7 +79,7 @@ object XrayController {
             })
         }
         return JSONObject().apply {
-            put("log", JSONObject().put("loglevel", "warning"))
+            put("log", JSONObject().put("loglevel", "info"))
             put("inbounds", inbounds)
             put("outbounds", outbounds)
             put("routing", JSONObject().put("rules", rules))

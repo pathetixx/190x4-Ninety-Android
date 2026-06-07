@@ -340,6 +340,7 @@ private fun LogsSection(context: Context) {
     val stderr = remember(refresh) { Diag.boxStderr(context) }
     val runLog = remember(refresh) { Diag.boxRun(context) }
     val logcat = remember(refresh) { Diag.logcat(context) }
+    val xray = remember(refresh) { Diag.xrayLog(context) }
     SurfaceCard {
         Row(
             Modifier.fillMaxWidth(),
@@ -356,7 +357,7 @@ private fun LogsSection(context: Context) {
             }
         }
         Spacer(Modifier.height(10.dp))
-        if (crash == null && stderr == null && runLog == null && logcat == null) {
+        if (crash == null && stderr == null && runLog == null && logcat == null && xray == null) {
             Text("Логов пока нет — подключись к узлу.", color = Ink.TextMid, style = NinetyTypography.bodyMedium)
         } else {
             crash?.let {
@@ -373,6 +374,10 @@ private fun LogsSection(context: Context) {
             }
             runLog?.let {
                 Text("лог ядра (хвост):", color = Ink.TextLo, style = NinetyTypography.titleMedium)
+                Spacer(Modifier.height(4.dp)); Text(it, color = Ink.TextMid, style = MonoStyle); Spacer(Modifier.height(10.dp))
+            }
+            xray?.let {
+                Text("xray (xhttp-узлы):", color = NinetyState.pack.accentBright, style = NinetyTypography.titleMedium)
                 Spacer(Modifier.height(4.dp)); Text(it, color = Ink.TextMid, style = MonoStyle)
             }
         }

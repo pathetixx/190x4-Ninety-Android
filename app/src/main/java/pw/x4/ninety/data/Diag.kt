@@ -17,6 +17,13 @@ object Diag {
     private fun runFile(ctx: Context) = File(ctx.filesDir, "box-run.log")
     private fun debugFile(ctx: Context) = File(ctx.filesDir, "box-debug.log")
     private fun logcatFile(ctx: Context) = File(ctx.filesDir, "logcat.txt")
+    /** Лог standalone-xray (XrayController пишет сюда stdout/stderr процесса). */
+    fun xrayFile(ctx: Context) = File(ctx.filesDir, "xray.log")
+
+    fun xrayLog(ctx: Context): String? {
+        val txt = xrayFile(ctx).takeIf { it.exists() }?.readText()?.takeIf { it.isNotBlank() } ?: return null
+        return if (txt.length > 8000) "…(начало обрезано — жми «Скопировать»)\n" + txt.takeLast(8000) else txt
+    }
 
     /**
      * Снимок системного logcat при старте процесса. Нативный краш (SIGSEGV/abort в
@@ -128,6 +135,7 @@ object Diag {
         val sb = StringBuilder()
         lastCrash(ctx)?.let { sb.append("== last_crash ==\n").append(it).append("\n\n") }
         logcatFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== logcat snapshot ==\n").append(it.readText()).append("\n\n") }
+        xrayFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== xray.log ==\n").append(it.readText()).append("\n\n") }
         stderrFile(ctx).takeIf { it.exists() }?.let { sb.append("== box stderr ==\n").append(it.readText()).append("\n\n") }
         runFile(ctx).takeIf { it.exists() }?.let { sb.append("== box run (log.output) ==\n").append(it.readText()).append("\n\n") }
         debugFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== box debug (platform) ==\n").append(it.readText()) }
@@ -141,5 +149,6 @@ object Diag {
         runFile(ctx).delete()
         debugFile(ctx).delete()
         logcatFile(ctx).delete()
+        xrayFile(ctx).delete()
     }
 }
