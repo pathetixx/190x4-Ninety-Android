@@ -29,7 +29,8 @@ object XrayController {
         stop()
         try {
             Xraybridge.registerDialerController(object : Protector {
-                override fun protect(fd: Int): Boolean = service.protect(fd)
+                // gomobile биндит Go `int` как Java `long` → fd:Long (VpnService.protect ждёт Int).
+                override fun protect(fd: Long): Boolean = service.protect(fd.toInt())
             })
         } catch (_: Throwable) {}
         Xraybridge.runXrayFromJSON(buildConfig(bridges)) // бросит при ошибке конфига
