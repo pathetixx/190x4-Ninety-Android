@@ -21,30 +21,34 @@ class NinetyTileService : TileService() {
     override fun onClick() {
         if (VpnController.isActive) {
             NinetyVpnService.stop(this)
+            setTile(false, "Отключение…") // оптимистично; финальное состояние пнёт VpnController
         } else {
             if (Store.activeNode() == null && !Store.isAutoActive) {
                 openApp(null) // нечего подключать — пусть выберут узел
                 return
             }
             val prepare = VpnService.prepare(this)
-            if (prepare != null) openApp(MainActivity.ACTION_TOGGLE) // нужен consent → через активити
-            else NinetyVpnService.start(this)
+            if (prepare != null) { openApp(MainActivity.ACTION_TOGGLE); return } // consent → через активити
+            NinetyVpnService.start(this)
+            setTile(true, "Подключение…") // мгновенный отклик плитки, не ждём markConnecting
         }
-        sync()
     }
 
     private fun sync() {
-        val t = qsTile ?: return
-        t.state = if (VpnController.isActive) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        t.label = "Ninety"
-        if (Build.VERSION.SDK_INT >= 29) {
-            t.subtitle = when (VpnController.state) {
-                ConnState.Connected -> "Защищено"
-                ConnState.Connecting -> "Подключение…"
-                ConnState.Stopping -> "Отключение…"
-                else -> "Отключено"
-            }
+        val subtitle = when (VpnController.state) {
+            ConnState.Connected -> "Защищено"
+            ConnState.Connecting -> "Подключение…"
+            ConnState.Stopping -> "Отключение…"
+            else -> "Отключено"
         }
+        setTile(VpnController.isActive, subtitle)
+    }
+
+    private fun setTile(active: Boolean, subtitle: String) {
+        val t = qsTile ?: return
+        t.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        t.label = "Ninety"
+        if (Build.VERSION.SDK_INT >= 29) t.subtitle = subtitle
         t.updateTile()
     }
 

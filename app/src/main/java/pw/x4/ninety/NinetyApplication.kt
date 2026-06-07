@@ -7,6 +7,7 @@ import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.packById
+import pw.x4.ninety.vpn.VpnController
 
 class NinetyApplication : Application() {
     override fun onCreate() {
@@ -19,5 +20,7 @@ class NinetyApplication : Application() {
         Store.init(this)
         // Настройки ядра (для tile-старта VPN без открытия аппы).
         Options.load(this)
+        // Контекст для пинка QS-плитки при смене состояния туннеля.
+        VpnController.appContext = this
     }
 }
