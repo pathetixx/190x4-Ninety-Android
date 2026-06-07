@@ -295,7 +295,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun notification(text: String) = NotificationCompat.Builder(this, CHANNEL)
-        .setSmallIcon(R.drawable.ic_launcher_foreground)
+        .setSmallIcon(R.drawable.ic_launcher_mono)
         .setContentTitle("Ninety")
         .setContentText(text)
         .setOngoing(true)
