@@ -80,6 +80,14 @@ object XrayController {
         }
         return JSONObject().apply {
             put("log", JSONObject().put("loglevel", "info"))
+            // Свой DNS: системный резолвер Go на Android указывает на [::1]:53 (его нет) →
+            // xray не мог зарезолвить хост сервера (lookup … connection refused) и рвал
+            // соединение. xray-процесс вне TUN → 1.1.1.1/8.8.8.8 резолвятся напрямую.
+            // UseIPv4 — на телефоне IPv6 часто нет, AAAA-резолв впустую вешает dial.
+            put("dns", JSONObject().apply {
+                put("servers", JSONArray().put("1.1.1.1").put("8.8.8.8"))
+                put("queryStrategy", "UseIPv4")
+            })
             put("inbounds", inbounds)
             put("outbounds", outbounds)
             put("routing", JSONObject().put("rules", rules))
