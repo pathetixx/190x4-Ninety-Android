@@ -35,7 +35,20 @@ object ClashMonitor : CommandClientHandler {
         val autoNow: String? = null,                // эффективная нода авто-группы (быстрейшая)
         val connected: Boolean = false,
         val testing: Boolean = false,
-    )
+        val up: Long = 0,                           // исходящий, байт/с (CommandStatus)
+        val down: Long = 0,                         // входящий, байт/с
+    ) {
+        /** Тег ноды, через которую реально идёт трафик (порт desktop pickEffectiveNode):
+         *  селектор «auto» → быстрейший узел auto-группы; иначе — выбранный тег. */
+        fun effectiveTag(): String? = when (val s = selectorNow) {
+            null -> autoNow
+            "auto" -> autoNow
+            else -> s
+        }
+
+        /** Задержка эффективной ноды (для ping-пилюли hero). */
+        fun effectiveDelay(): Int? = effectiveTag()?.let { delays[it] }
+    }
 
     var snapshot by mutableStateOf(Snapshot())
         private set
@@ -57,7 +70,8 @@ object ClashMonitor : CommandClientHandler {
             try {
                 val opts = CommandClientOptions()
                 opts.addCommand(Libbox.CommandGroup)
-                opts.statusInterval = 1_000_000_000L // 1s; группам не критично
+                opts.addCommand(Libbox.CommandStatus) // трафик up/down + память
+                opts.statusInterval = 1_000_000_000L // 1s — частота статус-пушей
                 val c = CommandClient(this, opts) // gomobile: NewCommandClient → конструктор
                 client = c
                 c.connect() // дозванивается и стартует read-loop в горутине, возвращается сразу
@@ -116,7 +130,12 @@ object ClashMonitor : CommandClientHandler {
     override fun setDefaultLogLevel(level: Int) {}
     override fun clearLogs() {}
     override fun writeLogs(messageList: LogIterator?) {}
-    override fun writeStatus(message: StatusMessage) {}
+    override fun writeStatus(message: StatusMessage) {
+        // CommandStatus раз в statusInterval — берём мгновенную скорость up/down (байт/с).
+        val up = try { message.uplink } catch (_: Throwable) { 0L }
+        val down = try { message.downlink } catch (_: Throwable) { 0L }
+        main.post { snapshot = snapshot.copy(up = up, down = down, connected = true) }
+    }
     override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
     override fun updateClashMode(newMode: String) {}
     override fun writeConnectionEvents(events: ConnectionEvents?) {}

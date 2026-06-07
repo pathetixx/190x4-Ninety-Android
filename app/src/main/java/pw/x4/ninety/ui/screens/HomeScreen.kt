@@ -35,11 +35,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import pw.x4.ninety.data.Fmt
 import pw.x4.ninety.data.Profile
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.Hero
 import pw.x4.ninety.ui.components.IconTile
-import pw.x4.ninety.ui.components.PingPill
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
@@ -55,6 +55,7 @@ import pw.x4.ninety.vpn.VpnController
 fun HomeScreen(onToggle: () -> Unit, onOpenProfiles: () -> Unit, onOpenNodes: () -> Unit) {
     val pack = NinetyState.pack
     val state = VpnController.state
+    val snap = ClashMonitor.snapshot
 
     val title = when (state) {
         ConnState.Idle -> "Не защищено"
@@ -111,6 +112,14 @@ fun HomeScreen(onToggle: () -> Unit, onOpenProfiles: () -> Unit, onOpenNodes: ()
                     Spacer(Modifier.width(8.dp))
                     Text(hint, style = KickerStyle, color = Ink.TextLo)
                 }
+                // Ping-пилюля под «Защищено» (порт desktop hero__ping): wifi-значок +
+                // задержка эффективной ноды, клик = перетест. Только при туннеле.
+                if (secured) {
+                    Spacer(Modifier.height(14.dp))
+                    HeroPing(ms = snap.effectiveDelay(), testing = snap.testing) {
+                        ClashMonitor.urlTestAll()
+                    }
+                }
                 VpnController.lastError?.let {
                     if (state == ConnState.Idle) {
                         Spacer(Modifier.height(8.dp))
@@ -122,6 +131,56 @@ fun HomeScreen(onToggle: () -> Unit, onOpenProfiles: () -> Unit, onOpenNodes: ()
 
         LocationTile(onClick = onOpenNodes)
         Spacer(Modifier.height(12.dp))
+    }
+}
+
+/** Ping-пилюля hero (wifi + задержка + МС, клик = перетест). Грейд цветом как desktop. */
+@Composable
+private fun HeroPing(ms: Int?, testing: Boolean, onClick: () -> Unit) {
+    val pack = NinetyState.pack
+    val dead = ms == null || ms <= 0 || ms >= 65000
+    val color = when {
+        dead -> Ink.TextLo
+        ms!! < 800 -> Ink.Ok
+        ms < 1500 -> Ink.Warn
+        else -> Ink.Err
+    }
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Ink.Ink2)
+            .border(1.dp, Ink.Line2, RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(NinetyIcons.Wifi, contentDescription = "Обновить задержку",
+            tint = if (testing) pack.accentBright else color, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(if (dead) "—" else "$ms", style = NinetyTypography.titleMedium, color = color)
+        Spacer(Modifier.width(3.dp))
+        Text("МС", style = KickerStyle, color = color.copy(alpha = 0.7f))
+    }
+}
+
+/** Мини-трафик ↓↑ справа в плитке локации (порт desktop stats-strip ВХОДЯЩИЙ/ИСХОДЯЩИЙ). */
+@Composable
+private fun TrafficMini(down: Long, up: Long) {
+    val pack = NinetyState.pack
+    val (dv, du) = Fmt.rate(down)
+    val (uv, uu) = Fmt.rate(up)
+    Column(horizontalAlignment = Alignment.End) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("↓ ", style = MonoStyle, color = pack.accentBright)
+            Text(dv, style = MonoStyle, color = Ink.TextHi)
+            Text(" $du", style = KickerStyle, color = Ink.TextLo)
+        }
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("↑ ", style = MonoStyle, color = Ink.TextMid)
+            Text(uv, style = MonoStyle, color = Ink.TextHi)
+            Text(" $uu", style = KickerStyle, color = Ink.TextLo)
+        }
     }
 }
 
@@ -194,14 +253,10 @@ private fun LocationTile(onClick: () -> Unit) {
     val node = Store.activeNode()
     val hasSelection = auto || node != null
     val snap = ClashMonitor.snapshot
+    val connected = VpnController.state == ConnState.Connected
 
     // В авто-режиме показываем реальный выбранный узел (как desktop: auto.now).
     val effNode = if (auto) snap.autoNow?.let { tag -> Store.activeProfileNodes().firstOrNull { ConfigBuilder.tagOf(it) == tag } } else null
-    val ping: Int? = when {
-        auto -> snap.autoNow?.let { snap.delays[it] }
-        node != null -> snap.delays[ConfigBuilder.tagOf(node)]
-        else -> null
-    }
 
     Row(
         Modifier
@@ -241,9 +296,10 @@ private fun LocationTile(onClick: () -> Unit) {
                 )
             }
         }
-        if (hasSelection) {
+        // Трафик ↓↑ вместо пинга (пинг теперь под «Защищено» в hero). Только при туннеле.
+        if (connected) {
             Spacer(Modifier.width(8.dp))
-            PingPill(ping)
+            TrafficMini(down = snap.down, up = snap.up)
         }
         Spacer(Modifier.width(8.dp))
         Icon(NinetyIcons.ChevronRight, contentDescription = null, tint = Ink.TextFaint, modifier = Modifier.size(14.dp))

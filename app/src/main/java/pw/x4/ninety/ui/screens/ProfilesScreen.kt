@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,11 +33,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import pw.x4.ninety.data.Fmt
 import pw.x4.ninety.data.Importer
 import pw.x4.ninety.data.Profile
 import pw.x4.ninety.data.Store
@@ -57,6 +62,7 @@ fun ProfilesScreen() {
     val context = LocalContext.current
     val profiles = Store.profiles
     var busy by remember { mutableStateOf(false) }
+    var showAdd by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -75,7 +81,7 @@ fun ProfilesScreen() {
                         )
                     }
                 }
-                PillButton("Добавить") { addFromClipboard(context) }
+                PillButton("Добавить") { showAdd = true }
             },
         )
         Spacer(Modifier.height(8.dp))
@@ -86,10 +92,7 @@ fun ProfilesScreen() {
         Spacer(Modifier.height(16.dp))
 
         if (profiles.isEmpty()) {
-            Text(
-                "Скопируйте ссылку подписки или конфиг (vless/vmess/trojan/ss/hysteria2/tuic)\nи нажмите «Добавить».",
-                color = Ink.TextMid, style = NinetyTypography.bodyMedium,
-            )
+            EmptyState { showAdd = true }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(profiles, key = { it.id }) { p ->
@@ -106,79 +109,237 @@ fun ProfilesScreen() {
             }
         }
     }
+
+    if (showAdd) AddModal(context, onDismiss = { showAdd = false })
 }
 
 @Composable
+private fun EmptyState(onAdd: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("SUBSCRIPTIONS · EMPTY", style = KickerStyle, color = Ink.TextFaint)
+        Spacer(Modifier.height(10.dp))
+        Text("Нет профилей", style = NinetyTypography.titleLarge, color = Ink.TextHi)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Скопируйте ссылку подписки или конфиг (vless/vmess/trojan/ss/hysteria2/tuic) и нажмите «Добавить».",
+            style = NinetyTypography.bodyMedium, color = Ink.TextMid,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+        Spacer(Modifier.height(16.dp))
+        PillButton("Добавить") { onAdd() }
+    }
+}
+
+// ── Карточка профиля (порт desktop .prof-card) ─────────────
+@Composable
 private fun ProfileCard(profile: Profile, active: Boolean, onSelect: () -> Unit, onDelete: () -> Unit) {
     val pack = NinetyState.pack
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
-            .background(if (active) pack.accentSoft else Ink.Ink1, RoundedCornerShape(14.dp))
-            .border(1.dp, if (active) pack.accent else Ink.Line2, RoundedCornerShape(14.dp))
+            .background(if (active) pack.accentSoft else Ink.Ink1, RoundedCornerShape(16.dp))
+            .border(1.dp, if (active) pack.accent else Ink.Line2, RoundedCornerShape(16.dp))
             .clickable { onSelect() }
             .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconTile(if (profile.isSub) NinetyIcons.Globe else NinetyIcons.Nodes, size = 44, accent = active)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    profile.name, style = NinetyTypography.titleMedium, color = Ink.TextHi,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    AnnotatedString(if (profile.isSub) "ПОДПИСКА" else "КОНФИГ"),
-                    style = KickerStyle.copy(fontSize = 9.sp),
-                    color = pack.accentBright,
-                    modifier = Modifier
-                        .background(pack.accentSoft, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconTile(if (profile.isSub) NinetyIcons.Globe else NinetyIcons.Nodes, size = 42, accent = active)
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        profile.name, style = NinetyTypography.titleMedium, color = Ink.TextHi,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Badge(if (active) "АКТИВНЫЙ" else if (profile.isSub) "ПОДПИСКА" else "КОНФИГ", active)
+                }
+                Spacer(Modifier.height(4.dp))
+                val sub = when {
+                    profile.isSub && profile.url.isNotBlank() -> profile.url
+                    profile.isSub -> "${Store.nodeCount(profile.id)} нод"
+                    else -> singleHost(profile)
+                }
+                Text(sub, style = MonoStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(5.dp))
-            val sub = when {
-                profile.isSub && profile.url.isNotBlank() -> profile.url
-                profile.isSub -> "${Store.nodeCount(profile.id)} нод"
-                else -> "Одиночный конфиг"
-            }
-            Text(sub, style = MonoStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.size(32.dp).clip(CircleShape).clickable { onDelete() },
+                contentAlignment = Alignment.Center,
+            ) { Icon(NinetyIcons.Trash, "Удалить", tint = Ink.TextLo, modifier = Modifier.size(16.dp)) }
         }
-        Spacer(Modifier.width(10.dp))
-        // правая колонка: счётчик нод/дни + удаление
-        Column(horizontalAlignment = Alignment.End) {
+
+        // Бар трафика подписки (если есть лимит)
+        profile.usedFraction()?.let { frac ->
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Ink.Line1)) {
+                Box(Modifier.fillMaxWidth(frac).height(3.dp).clip(RoundedCornerShape(2.dp)).background(pack.accent))
+            }
+        }
+
+        // Строка метрик
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
             if (profile.isSub) {
-                Text("${Store.nodeCount(profile.id)}", style = NinetyTypography.titleMedium, color = Ink.TextHi)
-                Text("НОД", style = KickerStyle, color = Ink.TextFaint)
+                StatCell("${Store.nodeCount(profile.id)}", "УЗЛОВ")
+                StatCell(profile.daysLeft()?.let { "$it" } ?: "∞", "ИСТЕКАЕТ")
+                if (profile.total > 0) StatCell(Fmt.bytes(profile.used), "ТРАФИК")
+                else StatCell(Fmt.relTime(profile.updatedAt), "ОБНОВЛЕНО")
+            } else {
+                val n = Store.nodesOf(profile.id).firstOrNull()
+                StatCell((n?.proto ?: "vless").uppercase(), "ПРОТОКОЛ")
+                StatCell((n?.security?.takeIf { it != "none" } ?: "tcp").uppercase(), "БЕЗОПАСНОСТЬ")
             }
-            profile.daysLeft()?.let {
-                Spacer(Modifier.height(2.dp))
-                Text("${it}д", style = MonoStyle, color = pack.accentBright)
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        Box(
-            Modifier.size(32.dp).clip(CircleShape).clickable { onDelete() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(NinetyIcons.Trash, contentDescription = "Удалить", tint = Ink.TextLo, modifier = Modifier.size(16.dp))
         }
     }
 }
 
-private fun toast(context: Context, msg: String) =
-    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+@Composable
+private fun StatCell(value: String, label: String) {
+    Column {
+        Text(value, style = MonoStyle.copy(fontSize = 13.sp), color = Ink.TextHi, maxLines = 1)
+        Spacer(Modifier.height(2.dp))
+        Text(label, style = KickerStyle.copy(fontSize = 9.sp), color = Ink.TextFaint)
+    }
+}
 
-private fun addFromClipboard(context: Context) {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
-    Importer.importText(
-        raw = text,
-        onLoading = { Toast.makeText(context, "Загружаю…", Toast.LENGTH_SHORT).show() },
-        onDone = { added, error ->
-            toast(context, error ?: if (added > 0) "Добавлено: $added" else "Ничего не добавлено")
-        },
+@Composable
+private fun Badge(text: String, active: Boolean) {
+    val pack = NinetyState.pack
+    Text(
+        AnnotatedString(text),
+        style = KickerStyle.copy(fontSize = 9.sp),
+        color = if (active) pack.accentBright else Ink.TextMid,
+        modifier = Modifier
+            .background(if (active) pack.accentSoft else Ink.Ink3, RoundedCornerShape(4.dp))
+            .border(1.dp, if (active) pack.accent else Ink.Line2, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
+
+// ── Модалка добавления (порт desktop add-modal: буфер + ручной ввод) ──
+@Composable
+private fun AddModal(context: Context, onDismiss: () -> Unit) {
+    val pack = NinetyState.pack
+    var text by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun doImport(raw: String) {
+        val r = raw.trim()
+        if (r.isEmpty()) { error = "Пусто — вставьте ссылку подписки или конфиг"; return }
+        error = null
+        Importer.importText(
+            raw = r,
+            onLoading = { busy = true },
+            onDone = { added, err ->
+                busy = false
+                if (err != null) error = err
+                else {
+                    Toast.makeText(context, if (added > 0) "Добавлено: $added" else "Ничего не добавлено", Toast.LENGTH_LONG).show()
+                    onDismiss()
+                }
+            },
+        )
+    }
+
+    Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Ink.Ink1, RoundedCornerShape(20.dp))
+                .border(1.dp, Ink.Line2, RoundedCornerShape(20.dp))
+                .padding(20.dp),
+        ) {
+            Text("ADD · PROFILE", style = KickerStyle, color = pack.accentBright)
+            Spacer(Modifier.height(6.dp))
+            Text("Добавить профиль", style = NinetyTypography.titleLarge, color = Ink.TextHi)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Ссылка подписки (http/https) или конфиг vless/vmess/trojan/ss/hysteria2/tuic. Можно вставить список — каждый конфиг с новой строки.",
+                style = NinetyTypography.bodyMedium, color = Ink.TextMid,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            // Вставить из буфера — один тап
+            Box(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(pack.accentSoft)
+                    .border(1.dp, pack.accent, RoundedCornerShape(12.dp))
+                    .clickable(enabled = !busy) { doImport(readClipboard(context)) }
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (busy) "ЗАГРУЖАЮ…" else "ВСТАВИТЬ ИЗ БУФЕРА", style = MonoStyle, color = pack.accentBright)
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Text("или вставьте вручную", style = KickerStyle, color = Ink.TextFaint)
+            Spacer(Modifier.height(8.dp))
+            Box(
+                Modifier.fillMaxWidth()
+                    .heightIn(min = 76.dp)
+                    .background(Ink.Ink2, RoundedCornerShape(10.dp))
+                    .border(1.dp, Ink.Line2, RoundedCornerShape(10.dp))
+                    .padding(12.dp),
+            ) {
+                if (text.isEmpty()) {
+                    Text("vless://… или https://…", style = MonoStyle, color = Ink.TextFaint)
+                }
+                BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    textStyle = MonoStyle.copy(color = Ink.TextHi),
+                    cursorBrush = SolidColor(pack.accent),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            error?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, style = MonoStyle, color = Ink.Err)
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ModalBtn("ОТМЕНА", primary = false, enabled = !busy, modifier = Modifier.weight(1f)) { onDismiss() }
+                ModalBtn("ДОБАВИТЬ", primary = true, enabled = !busy, modifier = Modifier.weight(1f)) { doImport(text) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModalBtn(
+    text: String, primary: Boolean, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit,
+) {
+    val pack = NinetyState.pack
+    Box(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (primary) pack.accentSoft else Ink.Ink2)
+            .border(1.dp, if (primary) pack.accent else Ink.Line2, RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled) { onClick() }
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MonoStyle, color = if (primary) pack.accentBright else Ink.TextMid)
+    }
+}
+
+private fun singleHost(p: Profile): String {
+    val n = Store.nodesOf(p.id).firstOrNull() ?: return "Одиночный конфиг"
+    return "${n.host}:${n.port}"
+}
+
+private fun readClipboard(context: Context): String {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    return cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
+}
+
+private fun toast(context: Context, msg: String) =
+    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()

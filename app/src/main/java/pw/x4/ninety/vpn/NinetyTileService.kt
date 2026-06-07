@@ -1,0 +1,63 @@
+package pw.x4.ninety.vpn
+
+import android.app.PendingIntent
+import android.content.Intent
+import android.net.VpnService
+import android.os.Build
+import android.service.quicksettings.Tile
+import android.service.quicksettings.TileService
+import pw.x4.ninety.MainActivity
+import pw.x4.ninety.data.Store
+
+/**
+ * Плитка «Быстрых настроек» (шторка) — вкл/выкл VPN одним тапом без открытия аппы.
+ * Если нужен consent на VpnService или не выбран узел — открываем MainActivity
+ * (consent-диалог нельзя показать из tile напрямую).
+ */
+class NinetyTileService : TileService() {
+
+    override fun onStartListening() = sync()
+
+    override fun onClick() {
+        if (VpnController.isActive) {
+            NinetyVpnService.stop(this)
+        } else {
+            if (Store.activeNode() == null && !Store.isAutoActive) {
+                openApp(null) // нечего подключать — пусть выберут узел
+                return
+            }
+            val prepare = VpnService.prepare(this)
+            if (prepare != null) openApp(MainActivity.ACTION_TOGGLE) // нужен consent → через активити
+            else NinetyVpnService.start(this)
+        }
+        sync()
+    }
+
+    private fun sync() {
+        val t = qsTile ?: return
+        t.state = if (VpnController.isActive) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        t.label = "Ninety"
+        if (Build.VERSION.SDK_INT >= 29) {
+            t.subtitle = when (VpnController.state) {
+                ConnState.Connected -> "Защищено"
+                ConnState.Connecting -> "Подключение…"
+                ConnState.Stopping -> "Отключение…"
+                else -> "Отключено"
+            }
+        }
+        t.updateTile()
+    }
+
+    private fun openApp(action: String?) {
+        val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (action != null) intent.action = action
+        if (Build.VERSION.SDK_INT >= 34) {
+            val pi = PendingIntent.getActivity(
+                this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            startActivityAndCollapse(pi)
+        } else {
+            @Suppress("DEPRECATION") startActivityAndCollapse(intent)
+        }
+    }
+}

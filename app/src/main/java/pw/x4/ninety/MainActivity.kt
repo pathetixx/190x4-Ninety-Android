@@ -1,5 +1,6 @@
 package pw.x4.ninety
 
+import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
 import android.widget.Toast
@@ -34,6 +35,21 @@ class MainActivity : ComponentActivity() {
         }
         maybeAutoConnect()
         maybeCheckUpdate()
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    /** Тоггл VPN по интенту от QS-плитки (когда нужен был consent — плитка шлёт нас сюда). */
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == ACTION_TOGGLE) {
+            intent.action = null // одноразово: не повторять тоггл при пересоздании активити
+            toggleVpn()
+        }
     }
 
     /** Тихая проверка обновлений при запуске → OTA-модалка, если версия новее и не «отложена». */
@@ -73,5 +89,9 @@ class MainActivity : ComponentActivity() {
     private fun startVpn() {
         if (Store.activeNode() == null) return
         NinetyVpnService.start(this)
+    }
+
+    companion object {
+        const val ACTION_TOGGLE = "pw.x4.ninety.action.TOGGLE"
     }
 }

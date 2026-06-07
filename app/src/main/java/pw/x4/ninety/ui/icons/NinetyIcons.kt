@@ -76,4 +76,11 @@ object NinetyIcons {
         "M4 6h10", "M10 12h10", "M4 18h10",
         "M17 4v4", "M7 10v4", "M17 16v4",
     )
+    // wifi-сигнал — для ping-пилюли hero (порт desktop hero__ping-icon)
+    val Wifi: ImageVector = icon(
+        "M5 12.5a11 11 0 0 1 14 0",
+        "M2 9a16 16 0 0 1 20 0",
+        "M8.5 16a6 6 0 0 1 7 0",
+        "M12 19.5h.01",
+    )
 }

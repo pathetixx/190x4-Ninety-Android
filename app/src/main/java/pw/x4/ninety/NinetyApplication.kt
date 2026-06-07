@@ -2,6 +2,7 @@ package pw.x4.ninety
 
 import android.app.Application
 import pw.x4.ninety.data.Diag
+import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.theme.NinetyState
@@ -16,5 +17,7 @@ class NinetyApplication : Application() {
         NinetyState.pack = packById(Prefs.get(this).themePack)
         // Загрузка узлов/активного.
         Store.init(this)
+        // Настройки ядра (для tile-старта VPN без открытия аппы).
+        Options.load(this)
     }
 }
