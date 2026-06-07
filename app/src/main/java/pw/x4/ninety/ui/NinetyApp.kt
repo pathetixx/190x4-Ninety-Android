@@ -131,8 +131,10 @@ private fun NinetyBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
                         d.label.uppercase(),
                         color = tint,
                         fontSize = 9.sp,
-                        letterSpacing = 1.2.sp,
+                        letterSpacing = 1.sp,
                         textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
             }

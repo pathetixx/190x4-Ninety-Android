@@ -1,5 +1,6 @@
 package pw.x4.ninety.ui.screens
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,10 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,10 +31,13 @@ import androidx.compose.ui.unit.dp
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.ScreenHeader
+import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
+import pw.x4.ninety.vpn.NinetyVpnService
+import pw.x4.ninety.vpn.VpnController
 
 @Composable
 fun NodesScreen() {
@@ -58,13 +64,60 @@ fun NodesScreen() {
             )
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (nodes.size >= 2) {
+                    item(key = "__auto__") {
+                        AutoRow(selected = Store.isAutoActive) { select(context, Store.AUTO_ID) }
+                    }
+                }
                 items(nodes, key = { it.id }) { node ->
                     NodeRow(node, selected = node.id == Store.activeId) {
-                        if (node.supported) Store.setActive(node.id)
+                        if (node.supported) select(context, node.id)
                         else Toast.makeText(context, "xhttp пока не поддержан (xray, M3)", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
+        }
+    }
+}
+
+/** Выбрать узел/режим и, если туннель уже поднят, перестроить его на лету. */
+private fun select(context: Context, id: String) {
+    Store.setActive(id)
+    // только Connected: при Connecting commandServer ещё null → reload-интент стартовал бы заново.
+    if (VpnController.state == pw.x4.ninety.vpn.ConnState.Connected) NinetyVpnService.reload(context)
+}
+
+/** Строка автовыбора — урлтест по всем нодам профиля (как «auto» в desktop). */
+@Composable
+private fun AutoRow(selected: Boolean, onClick: () -> Unit) {
+    val pack = NinetyState.pack
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(if (selected) pack.accentSoft else Ink.Ink1, RoundedCornerShape(14.dp))
+            .border(1.dp, if (selected) pack.accent else Ink.Line2, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(28.dp).background(pack.accentSoft, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(NinetyIcons.Nodes, contentDescription = null, tint = pack.accentBright, modifier = Modifier.size(15.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Авто", color = Ink.TextHi, style = NinetyTypography.titleMedium)
+            Text("Быстрейший узел по задержке", color = Ink.TextLo, style = MonoStyle)
+        }
+        if (selected) {
+            Text(
+                "АКТИВЕН", style = MonoStyle, color = pack.accent,
+                modifier = Modifier
+                    .background(pack.accentSoft, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            )
         }
     }
 }

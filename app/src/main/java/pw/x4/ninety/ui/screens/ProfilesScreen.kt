@@ -48,6 +48,9 @@ import pw.x4.ninety.ui.theme.KickerStyle
 import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
+import pw.x4.ninety.vpn.ConnState
+import pw.x4.ninety.vpn.NinetyVpnService
+import pw.x4.ninety.vpn.VpnController
 
 @Composable
 fun ProfilesScreen() {
@@ -93,7 +96,10 @@ fun ProfilesScreen() {
                     ProfileCard(
                         profile = p,
                         active = p.id == Store.activeProfileId,
-                        onSelect = { Store.setActiveProfile(p.id) },
+                        onSelect = {
+                            Store.setActiveProfile(p.id)
+                            if (VpnController.state == ConnState.Connected) NinetyVpnService.reload(context)
+                        },
                         onDelete = { Store.removeProfile(p.id); toast(context, "Профиль удалён") },
                     )
                 }

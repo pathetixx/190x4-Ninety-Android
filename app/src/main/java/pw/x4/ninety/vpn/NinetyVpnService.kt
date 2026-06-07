@@ -51,11 +51,13 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     // ── lifecycle ──────────────────────────────────────────────
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopTunnel(null)
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> { stopTunnel(null); return START_NOT_STICKY }
+            // смена ноды/режима на лету: пересобрать конфиг под новый Store.activeId.
+            // Если туннель не поднят — игнор (UI зовёт только при активном).
+            ACTION_RELOAD -> { if (commandServer != null) doReload() else stopSelf(); return START_STICKY }
+            else -> startTunnel()
         }
-        startTunnel()
         return START_STICKY
     }
 
@@ -108,7 +110,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 // null → SIGSEGV. Пустой OverrideOptions (nil-итераторы безопасны).
                 server.startOrReloadService(config, OverrideOptions())
 
-                val name = Store.activeNode()?.name ?: supported.firstOrNull()?.name
+                val name = Store.activeNodeLabel() ?: supported.firstOrNull()?.name
                 VpnController.markConnected(name)
                 updateNotification("Защищено${name?.let { " · $it" } ?: ""}")
             } catch (e: Throwable) {
@@ -155,6 +157,8 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         try { builder.addDisallowedApplication(packageName) } catch (_: Throwable) {}
 
         builder.setSession("Ninety")
+        // при reload openTun зовётся повторно — закрываем прежний fd, чтобы не текли.
+        try { pfd?.close() } catch (_: Throwable) {}
         val p = builder.establish() ?: throw IllegalStateException("establish() вернул null (нет согласия VPN)")
         pfd = p
         return p.fd
@@ -240,13 +244,19 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     // ── CommandServerHandler ───────────────────────────────────
     override fun serviceStop() { stopTunnel(null) }
 
-    override fun serviceReload() {
+    override fun serviceReload() { doReload() }
+
+    /** Пересборка конфига под текущий Store.activeId без полного рестарта службы. */
+    private fun doReload() {
         val server = commandServer ?: return
         Thread({
             try {
                 val supported = Store.supportedActiveNodes()
                 if (supported.isEmpty()) return@Thread
                 server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this)), OverrideOptions())
+                val name = Store.activeNodeLabel()
+                VpnController.markConnected(name)
+                updateNotification("Защищено${name?.let { " · $it" } ?: ""}")
             } catch (e: Throwable) {
                 stopTunnel(e.message ?: "Ошибка перезагрузки")
             }
@@ -308,6 +318,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     companion object {
         const val ACTION_START = "pw.x4.ninety.action.START"
         const val ACTION_STOP = "pw.x4.ninety.action.STOP"
+        const val ACTION_RELOAD = "pw.x4.ninety.action.RELOAD"
         private const val CHANNEL = "ninety_vpn"
         private const val NOTIF_ID = 1
 
@@ -320,6 +331,13 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         fun stop(context: Context) {
             context.startService(
                 Intent(context, NinetyVpnService::class.java).setAction(ACTION_STOP)
+            )
+        }
+
+        /** Перестроить туннель под новый активный узел (только если он поднят). */
+        fun reload(context: Context) {
+            context.startService(
+                Intent(context, NinetyVpnService::class.java).setAction(ACTION_RELOAD)
             )
         }
     }

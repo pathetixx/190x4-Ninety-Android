@@ -43,8 +43,18 @@ object Store {
         get() = prefs.subscriptionUrl
         set(v) { prefs.subscriptionUrl = v }
 
+    /** Sentinel для активного id: автовыбор быстрейшего узла (urltest). */
+    const val AUTO_ID = "auto"
+
     // ── Выборки ──
     fun activeNode(): Node? = nodes.firstOrNull { it.id == activeId }
+    val isAutoActive: Boolean get() = activeId == AUTO_ID
+
+    /** Подпись активного выбора для уведомления/UI: «Авто» либо имя узла. */
+    fun activeNodeLabel(): String? = when {
+        isAutoActive -> "Авто"
+        else -> activeNode()?.let { it.name.ifBlank { it.host } }
+    }
     fun activeProfile(): Profile? = profiles.firstOrNull { it.id == activeProfileId }
     fun nodesOf(profileId: String?): List<Node> = nodes.filter { it.subId == profileId }
     fun activeProfileNodes(): List<Node> = nodesOf(activeProfileId)

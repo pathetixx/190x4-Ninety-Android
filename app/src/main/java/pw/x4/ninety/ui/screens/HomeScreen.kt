@@ -186,7 +186,9 @@ private fun ProfileTile(onClick: () -> Unit) {
 @Composable
 private fun LocationTile(onClick: () -> Unit) {
     val pack = NinetyState.pack
+    val auto = Store.isAutoActive
     val node = Store.activeNode()
+    val hasSelection = auto || node != null
 
     Row(
         Modifier
@@ -199,21 +201,27 @@ private fun LocationTile(onClick: () -> Unit) {
     ) {
         Box(
             Modifier.size(10.dp).clip(CircleShape)
-                .background(if (node != null) pack.accent else Ink.Line3)
+                .background(if (hasSelection) pack.accent else Ink.Line3)
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                node?.let { it.name.ifBlank { it.host } } ?: "Сервер не выбран",
+                when {
+                    auto -> "Авто"
+                    node != null -> node.name.ifBlank { node.host }
+                    else -> "Сервер не выбран"
+                },
                 style = NinetyTypography.titleMedium, color = Ink.TextHi,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
-            if (node != null) {
+            val subtitle = when {
+                auto -> "БЫСТРЕЙШИЙ УЗЕЛ"
+                node != null -> "${node.proto.uppercase()} · ${if (node.security != "none") node.security.uppercase() else node.host}"
+                else -> null
+            }
+            subtitle?.let {
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    "${node.proto.uppercase()} · ${if (node.security != "none") node.security.uppercase() else node.host}",
-                    style = KickerStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+                Text(it, style = KickerStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         Spacer(Modifier.width(8.dp))
