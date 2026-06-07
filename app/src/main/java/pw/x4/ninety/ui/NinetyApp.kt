@@ -18,10 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,21 +36,24 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import pw.x4.ninety.ui.screens.ConnectScreen
+import pw.x4.ninety.ui.icons.NinetyIcons
+import pw.x4.ninety.ui.screens.HomeScreen
 import pw.x4.ninety.ui.screens.NodesScreen
+import pw.x4.ninety.ui.screens.ProfilesScreen
 import pw.x4.ninety.ui.screens.SettingsScreen
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.NinetyState
 
 private enum class Dest(val label: String, val icon: ImageVector) {
-    Connect("Подключение", Icons.Rounded.Bolt),
-    Nodes("Узлы", Icons.Rounded.Hub),
-    Settings("Настройки", Icons.Rounded.Settings),
+    Home("Главная", NinetyIcons.Home),
+    Profiles("Профили", NinetyIcons.Profiles),
+    Nodes("Ноды", NinetyIcons.Nodes),
+    Settings("Настройки", NinetyIcons.Settings),
 }
 
 @Composable
 fun NinetyApp(onToggleVpn: () -> Unit) {
-    var dest by rememberSaveable { mutableStateOf(Dest.Connect) }
+    var dest by rememberSaveable { mutableStateOf(Dest.Home) }
 
     Scaffold(
         containerColor = Ink.Ink0,
@@ -66,7 +65,12 @@ fun NinetyApp(onToggleVpn: () -> Unit) {
                 .padding(inner)
         ) {
             when (dest) {
-                Dest.Connect -> ConnectScreen(onToggle = onToggleVpn)
+                Dest.Home -> HomeScreen(
+                    onToggle = onToggleVpn,
+                    onOpenProfiles = { dest = Dest.Profiles },
+                    onOpenNodes = { dest = Dest.Nodes },
+                )
+                Dest.Profiles -> ProfilesScreen()
                 Dest.Nodes -> NodesScreen()
                 Dest.Settings -> SettingsScreen()
             }
@@ -109,7 +113,7 @@ private fun NinetyBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         ) { onSelect(d) }
-                        .padding(horizontal = 18.dp, vertical = 6.dp),
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // активный индикатор — короткая accent-черта над иконкой

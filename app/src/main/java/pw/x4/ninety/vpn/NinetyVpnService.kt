@@ -84,7 +84,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             try {
                 try { Libbox.redirectStderr(Diag.stderrFile(this).absolutePath) } catch (_: Throwable) {}
                 Diag.startRunLog(this)
-                val supported = Store.nodes.filter { it.supported }
+                val supported = Store.supportedActiveNodes()
                 require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
                 val config = ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this))
 
@@ -244,7 +244,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val server = commandServer ?: return
         Thread({
             try {
-                val supported = Store.nodes.filter { it.supported }
+                val supported = Store.supportedActiveNodes()
                 if (supported.isEmpty()) return@Thread
                 server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this)), OverrideOptions())
             } catch (e: Throwable) {

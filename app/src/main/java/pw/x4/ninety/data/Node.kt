@@ -40,6 +40,7 @@ data class Node(
     val zeroRtt: Boolean = false,
     val raw: String = "",
     val fromSub: Boolean = false,  // пришла из подписки → заменяется при refresh
+    val subId: String = "",        // id профиля-владельца (Profile.id); "" = legacy
 ) {
     /** Стабильный id для выбора/персиста. */
     val id: String get() = "$proto|$host|$port|$uuid$password".hashCode().toString()
@@ -55,7 +56,7 @@ data class Node(
         put("hostHeader", hostHeader); put("serviceName", serviceName); put("mode", mode)
         put("upMbps", upMbps); put("downMbps", downMbps); put("obfs", obfs); put("obfsPassword", obfsPassword)
         put("congestion", congestion); put("udpRelay", udpRelay); put("insecure", insecure)
-        put("zeroRtt", zeroRtt); put("raw", raw); put("fromSub", fromSub)
+        put("zeroRtt", zeroRtt); put("raw", raw); put("fromSub", fromSub); put("subId", subId)
     }
 
     companion object {
@@ -91,6 +92,7 @@ data class Node(
             zeroRtt = o.optBoolean("zeroRtt"),
             raw = o.optString("raw"),
             fromSub = o.optBoolean("fromSub"),
+            subId = o.optString("subId"),
         )
     }
 }

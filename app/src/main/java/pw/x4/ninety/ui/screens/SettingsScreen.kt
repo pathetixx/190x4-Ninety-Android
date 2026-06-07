@@ -34,14 +34,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.BuildConfig
-import pw.x4.ninety.data.Importer
 import pw.x4.ninety.data.Prefs
-import pw.x4.ninety.data.Store
 import pw.x4.ninety.data.Updater
-import pw.x4.ninety.ui.components.Kicker
 import pw.x4.ninety.ui.components.PillButton
+import pw.x4.ninety.ui.components.ScreenHeader
+import pw.x4.ninety.ui.components.SectionHeader
 import pw.x4.ninety.ui.components.SurfaceCard
 import pw.x4.ninety.ui.components.ToggleRow
+import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
@@ -60,13 +60,11 @@ fun SettingsScreen() {
             .padding(20.dp),
     ) {
         Spacer(Modifier.height(8.dp))
-        Kicker("Настройки", accent = true)
-        Spacer(Modifier.height(4.dp))
-        Text("Оформление", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+        ScreenHeader(kicker = "Settings", title = "Настройки")
         Spacer(Modifier.height(16.dp))
 
         SurfaceCard {
-            Kicker("Тема")
+            SectionHeader(NinetyIcons.Settings, "Тема")
             Spacer(Modifier.height(12.dp))
             ThemePacks.forEach { pack ->
                 val selected = pack.id == current.id
@@ -109,14 +107,12 @@ fun SettingsScreen() {
 
         SurfaceCard { BehaviorSection(prefs) }
         Spacer(Modifier.height(16.dp))
-        SurfaceCard { SubscriptionSection(context) }
-        Spacer(Modifier.height(16.dp))
         SurfaceCard { UpdateSection(context, prefs) }
 
         Spacer(Modifier.height(16.dp))
 
         SurfaceCard {
-            Kicker("О программе")
+            SectionHeader(NinetyIcons.Shield, "О программе")
             Spacer(Modifier.height(10.dp))
             InfoRow("Версия", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             InfoRow("Ядро", "sing-box / libbox")
@@ -135,7 +131,7 @@ fun SettingsScreen() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Kicker("Диагностика")
+                SectionHeader(NinetyIcons.Logs, "Логи")
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "СКОПИРОВАТЬ",
@@ -197,40 +193,12 @@ private fun InfoRow(label: String, value: String) {
 
 @Composable
 private fun BehaviorSection(prefs: Prefs) {
-    Kicker("Поведение")
+    SectionHeader(NinetyIcons.Sliders, "Поведение")
     Spacer(Modifier.height(6.dp))
     var auto by remember { mutableStateOf(prefs.autoConnect) }
     ToggleRow("Автоподключение", auto, sub = "К последней ноде при запуске") {
         auto = it; prefs.autoConnect = it
     }
-}
-
-@Composable
-private fun SubscriptionSection(context: Context) {
-    var busy by remember { mutableStateOf(false) }
-    var info by remember { mutableStateOf(Store.subscriptionUrl) }
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Kicker("Подписка")
-        PillButton(if (busy) "обновляю…" else "обновить", enabled = !busy && info != null) {
-            Importer.refresh(
-                onLoading = { busy = true },
-                onDone = { count, err ->
-                    busy = false
-                    info = Store.subscriptionUrl
-                    Toast.makeText(context, err ?: "Обновлено узлов: $count", Toast.LENGTH_LONG).show()
-                },
-            )
-        }
-    }
-    Spacer(Modifier.height(10.dp))
-    Text(
-        info ?: "Импортируйте подписку по URL во вкладке «Узлы».",
-        color = Ink.TextLo, style = pw.x4.ninety.ui.theme.MonoStyle,
-    )
 }
 
 @Composable
@@ -245,7 +213,7 @@ private fun UpdateSection(context: Context, prefs: Prefs) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Kicker("Обновление")
+        SectionHeader(NinetyIcons.Refresh, "Обновление")
         PillButton(if (busy) "…" else "проверить", enabled = !busy) {
             status = null; found = null
             Updater.check(

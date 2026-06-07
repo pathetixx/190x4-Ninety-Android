@@ -3,9 +3,12 @@ package pw.x4.ninety.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -13,10 +16,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.ui.theme.Ink
@@ -34,6 +40,59 @@ fun Kicker(text: String, modifier: Modifier = Modifier, accent: Boolean = false)
         color = if (accent) NinetyState.pack.accent else Ink.TextLo,
         modifier = modifier,
     )
+}
+
+/** Заголовок экрана: kicker (mono, разреженный) + крупный title + опц. подзаголовок. */
+@Composable
+fun ScreenHeader(
+    kicker: String,
+    title: String,
+    sub: String? = null,
+    actions: (@Composable RowScope.() -> Unit)? = null,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(AnnotatedString(kicker.uppercase()), style = KickerStyle, color = Ink.TextFaint)
+            Spacer(Modifier.height(5.dp))
+            Text(title, style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+        }
+        actions?.let { acts ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { acts() }
+        }
+    }
+    sub?.let {
+        Spacer(Modifier.height(6.dp))
+        Text(it, style = NinetyTypography.bodyMedium, color = Ink.TextMid)
+    }
+}
+
+/** Квадратная плитка-иконка (как .sub-card__icon / .prof-card__icon). */
+@Composable
+fun IconTile(icon: ImageVector, size: Int = 38, accent: Boolean = false) {
+    val pack = NinetyState.pack
+    Box(
+        Modifier
+            .size(size.dp)
+            .background(if (accent) pack.accentSoft else Ink.Ink2, RoundedCornerShape(10.dp))
+            .border(1.dp, if (accent) Color.Transparent else Ink.Line1, RoundedCornerShape(10.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = if (accent) pack.accentBright else Ink.TextMid, modifier = Modifier.size((size * 0.42f).dp))
+    }
+}
+
+/** Заголовок секции в Настройках: иконка + kicker. */
+@Composable
+fun SectionHeader(icon: ImageVector, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = NinetyState.pack.accent, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(8.dp))
+        Kicker(label)
+    }
 }
 
 /** Карточка-поверхность (ink-2 + тонкая обводка line-2), радиус r-lg. */
