@@ -20,6 +20,19 @@ import pw.x4.ninety.data.Options
  */
 object ConfigBuilder {
 
+    /** Базовый локальный SOCKS-порт для xray-мостов xhttp-нод (как desktop XRAY_BRIDGE_BASE_PORT). */
+    const val XRAY_BASE_PORT = 31100
+
+    /** xhttp-нода + её sing-box-тег + локальный socks-порт (xray слушает, sing-box ходит).
+     *  Детерминированно по порядку — ConfigBuilder (socks-outbound) и XrayController
+     *  (socks-inbound) зовут одно и то же, чтобы порты совпали. */
+    data class XrayBridge(val node: Node, val tag: String, val port: Int)
+
+    fun xrayBridges(nodes: List<Node>): List<XrayBridge> {
+        var p = XRAY_BASE_PORT
+        return nodes.distinctBy { it.id }.filter { it.isXhttp }.map { XrayBridge(it, tagOf(it), p++) }
+    }
+
     private const val GEO_BASE = "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set"
     private val BLOCK_AD_SETS = listOf(
         "geosite-ads" to "$GEO_BASE/block/geosite-category-ads-all.srs",
@@ -42,6 +55,10 @@ object ConfigBuilder {
         // outbound-tag, и ядро падает на дубликате.
         val uniq = nodes.distinctBy { it.id }
 
+        // xhttp-ноды: sing-box не строит xhttp-транспорт (рассыпается), а делает socks-
+        // outbound на локальный xray (xraybridge). Порты — общий план с XrayController.
+        val xrayPort = xrayBridges(uniq).associate { it.node.id to it.port }
+
         val nodeOutbounds = JSONArray()
         val nodeTags = ArrayList<String>()
         var selectedTag: String? = null
@@ -49,7 +66,8 @@ object ConfigBuilder {
             val tag = tagOf(n)
             nodeTags.add(tag)
             if (n.id == selectedId) selectedTag = tag
-            nodeOutbounds.put(outbound(n, tag, opts))
+            val bridgePort = xrayPort[n.id]
+            nodeOutbounds.put(if (bridgePort != null) socksOutbound(tag, bridgePort) else outbound(n, tag, opts))
         }
         val validSelected = selectedTag?.takeIf { nodeTags.contains(it) }
 
@@ -243,6 +261,12 @@ object ConfigBuilder {
     private fun experimental() = JSONObject().apply {
         put("cache_file", JSONObject().apply { put("enabled", true); put("store_rdrc", true) })
         put("unified_delay", JSONObject().put("enabled", true))
+    }
+
+    /** socks-outbound на локальный xray (xhttp-мост, two-core). */
+    private fun socksOutbound(tag: String, port: Int) = JSONObject().apply {
+        put("type", "socks"); put("tag", tag)
+        put("server", "127.0.0.1"); put("server_port", port); put("version", "5")
     }
 
     // ── outbound по протоколу ──────────────────────────────────

@@ -17,8 +17,8 @@ android {
 
         // Версионирование: монотонный versionCode = major*10000 + minor*100 + patch.
         // 0.1.0 -> 100. Свежий проект, без офсет-ловушки (нет прошлых установок).
-        versionCode = 107
-        versionName = "0.1.7"
+        versionCode = 108
+        versionName = "0.1.8"
 
         // ABI задаёт splits.abi ниже (abiFilters и splits взаимоисключающи).
     }
