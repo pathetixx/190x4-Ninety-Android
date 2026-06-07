@@ -17,10 +17,6 @@ env:
   # Ядро: hiddify-sing-box. Тег перемещаем → пин на конкретный SHA (supply-chain).
   HSB_TAG: v1.13.0.h5
   HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
-  # xray-core для xhttp — вшивается ВТОРЫМ пакетом (core/xraybridge.go) в ТОТ ЖЕ
-  # gomobile-AAR (one Go runtime). Отдельный AAR нельзя: дубль go.* + два рантайма.
-  # libXray как зависимость не берётся (CalVer-теги без /vN); xray-core (v1) — штатно.
-  XRAY_VER: v1.260327.1-0.20260601021109-94ffd50060f1
   NDK_VERSION: 28.0.13004108
 
 jobs:
@@ -51,7 +47,7 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" "ndk;${NDK_VERSION}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Build libbox.aar (gomobile bind, hiddify-sing-box + xray)
+      - name: Build libbox.aar (gomobile bind, hiddify-sing-box)
         run: |
           set -e
           echo "Cloning hiddify-sing-box ${HSB_TAG}…"
@@ -69,28 +65,16 @@ jobs:
           go install -v github.com/sagernet/gomobile/cmd/gobind@v0.1.11
           export PATH="$PATH:$(go env GOPATH)/bin"
 
-          # --- two-core: вшиваем xray ВТОРЫМ пакетом (xraybridge) в тот же AAR ---
-          # gomobile биндит несколько пакетов в один Go-рантайм → нет дубля go.*.
-          echo "Adding xray-core ${XRAY_VER} + xraybridge…"
-          mkdir -p xraybridge
-          cp "$GITHUB_WORKSPACE/core/xraybridge.go" xraybridge/xraybridge.go
-          go get github.com/xtls/xray-core@${XRAY_VER}
-          go mod tidy
-          # Дописываем ./xraybridge в bind-аргументы build_libbox (рядом с libbox),
-          # переиспользуя его точные теги/ldflags/androidapi.
-          sed -i 's#append(args, "./experimental/libbox")#append(args, "./experimental/libbox", "./xraybridge")#g' cmd/internal/build_libbox/main.go
-          grep -n '"./xraybridge"' cmd/internal/build_libbox/main.go || { echo "::error::sed не пропатчил build_libbox"; exit 1; }
-
           # build_libbox требует java "openjdk 17"; temurin 17 подходит.
           java --version
 
-          # Собирает libbox.aar (API23) + libbox-legacy.aar (API21) — теперь с xray внутри.
+          # Собирает libbox.aar (API23) + libbox-legacy.aar (API21).
           go run ./cmd/internal/build_libbox -target android
 
           ls -lh libbox*.aar
           mkdir -p "$GITHUB_WORKSPACE/app/libs"
           cp libbox.aar "$GITHUB_WORKSPACE/app/libs/libbox.aar"
-          echo "libbox.aar (+xray) -> app/libs/ ($(du -h libbox.aar | cut -f1))"
+          echo "libbox.aar -> app/libs/ ($(du -h libbox.aar | cut -f1))"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

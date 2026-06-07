@@ -105,11 +105,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 Libbox.setup(opts)
                 Libbox.checkConfig(config)
 
-                // two-core: поднять xray под xhttp-ноды ДО старта sing-box (его socks-
-                // порты должны уже слушать). Падение xray не валит туннель — не-xhttp
-                // ноды работают штатно (xhttp просто не подключатся).
-                try { XrayController.start(supported, this) } catch (e: Throwable) { Diag.writeCrash(this, "xrayStart", e) }
-
                 val server = Libbox.newCommandServer(this, this)
                 server.start()
                 commandServer = server
@@ -128,7 +123,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun stopTunnel(error: String?) {
-        try { XrayController.stop() } catch (_: Throwable) {}
         try { commandServer?.closeService() } catch (_: Throwable) {}
         try { commandServer?.close() } catch (_: Throwable) {}
         commandServer = null
@@ -262,9 +256,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 val supported = Store.supportedActiveNodes()
                 if (supported.isEmpty()) return@Thread
                 Options.load(this)
-                // Пересобрать xray под новый набор узлов (смена профиля/ноды могла
-                // добавить/убрать xhttp). xray.start идемпотентен, портит до sing-box reload.
-                try { XrayController.start(supported, this) } catch (e: Throwable) { Diag.writeCrash(this, "xrayReload", e) }
                 server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this)), OverrideOptions())
                 val name = Store.activeNodeLabel()
                 VpnController.markConnected(name)

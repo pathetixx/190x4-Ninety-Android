@@ -106,7 +106,10 @@ fun NodesScreen() {
                             node,
                             selected = node.id == Store.activeId,
                             ping = snap.delays[ConfigBuilder.tagOf(node)],
-                        ) { select(context, node.id) }
+                        ) {
+                            if (node.supported) select(context, node.id)
+                            else Toast.makeText(context, "xhttp пока не поддержан (xray, M3)", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -219,6 +222,7 @@ private fun AutoRow(
 @Composable
 private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Unit) {
     val pack = NinetyState.pack
+    val enabled = node.supported
     Row(
         Modifier
             .fillMaxWidth()
@@ -235,18 +239,19 @@ private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Un
         Column(Modifier.weight(1f)) {
             Text(
                 node.name.ifBlank { node.host },
-                color = Ink.TextHi,
+                color = if (enabled) Ink.TextHi else Ink.TextLo,
                 style = NinetyTypography.titleMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${node.proto} · ${node.host}:${node.port}" + if (node.isXhttp) " · xhttp" else "",
+                "${node.proto} · ${node.host}:${node.port}" + if (!enabled) " · xray (M3)" else "",
                 color = Ink.TextLo, style = MonoStyle,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.size(10.dp))
-        PingPill(ping)
+        // xhttp-ноды движок M2 не тестирует → пинга нет; для них пилюлю гасим.
+        if (enabled) PingPill(ping) else Text("M3", style = MonoStyle, color = Ink.TextFaint)
     }
 }
 
