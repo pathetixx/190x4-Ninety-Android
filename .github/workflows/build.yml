@@ -98,6 +98,9 @@ jobs:
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH="$PATH:$(go env GOPATH)/bin"
           go mod download
+          # gomobile bind требует x/mobile В ГРАФЕ модуля (новое поведение Go) —
+          # добавляем в go.mod клона, иначе «missing golang.org/x/mobile dependency».
+          go get golang.org/x/mobile/bind
           gomobile init
 
           # Флаги 1-в-1 из libXray build/app/android.py (checklinkname + 16KB page).
