@@ -222,7 +222,6 @@ private fun AutoRow(
 @Composable
 private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Unit) {
     val pack = NinetyState.pack
-    val enabled = node.supported
     Row(
         Modifier
             .fillMaxWidth()
@@ -239,19 +238,19 @@ private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Un
         Column(Modifier.weight(1f)) {
             Text(
                 node.name.ifBlank { node.host },
-                color = if (enabled) Ink.TextHi else Ink.TextLo,
+                color = Ink.TextHi,
                 style = NinetyTypography.titleMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${node.proto} · ${node.host}:${node.port}" + if (!enabled) " · xray (M3)" else "",
+                "${node.proto} · ${node.host}:${node.port}" + if (node.isXhttp) " · xhttp" else "",
                 color = Ink.TextLo, style = MonoStyle,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.size(10.dp))
-        // xhttp-ноды движок M2 не тестирует → пинга нет; для них пилюлю гасим.
-        if (enabled) PingPill(ping) else Text("M3", style = MonoStyle, color = Ink.TextFaint)
+        // xhttp-ноды теперь идут через xray-мост → sing-box их пингует как обычные.
+        PingPill(ping)
     }
 }
 

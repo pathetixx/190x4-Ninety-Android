@@ -10,3 +10,5 @@ captures/
 
 # Артефакт ядра — собирается в CI (gomobile bind), в репо не храним.
 app/libs/*.aar
+# xray-бинарь — собирается в CI (go build standalone), в репо не храним.
+app/src/main/jniLibs/*/libxray.so

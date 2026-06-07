@@ -45,8 +45,11 @@ data class Node(
     /** Стабильный id для выбора/персиста. */
     val id: String get() = "$proto|$host|$port|$uuid$password".hashCode().toString()
 
-    /** Поддерживается движком M2 (без xray). xhttp — нет. */
-    val supported: Boolean get() = type != "xhttp"
+    /** Все узлы поддержаны: обычные — libbox, xhttp — локальный xray (см. [XrayController]). */
+    val supported: Boolean get() = true
+
+    /** xhttp-транспорт: sing-box его не тянет, поднимается через standalone-xray + socks-мост. */
+    val isXhttp: Boolean get() = type == "xhttp"
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("proto", proto); put("name", name); put("host", host); put("port", port)

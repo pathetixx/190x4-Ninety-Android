@@ -42,6 +42,10 @@ object ConfigBuilder {
         // outbound-tag, и ядро падает на дубликате.
         val uniq = nodes.distinctBy { it.id }
 
+        // xhttp-ноды идут через локальный xray: вместо родного outbound — socks-мост на
+        // порт, который xray слушает (XrayController поднимает xray на тех же портах).
+        val xrayPort = xrayBridges(uniq).associate { it.node.id to it.port }
+
         val nodeOutbounds = JSONArray()
         val nodeTags = ArrayList<String>()
         var selectedTag: String? = null
@@ -49,7 +53,8 @@ object ConfigBuilder {
             val tag = tagOf(n)
             nodeTags.add(tag)
             if (n.id == selectedId) selectedTag = tag
-            nodeOutbounds.put(outbound(n, tag, opts))
+            val bridgePort = xrayPort[n.id]
+            nodeOutbounds.put(if (bridgePort != null) socksOutbound(tag, bridgePort) else outbound(n, tag, opts))
         }
         val validSelected = selectedTag?.takeIf { nodeTags.contains(it) }
 
@@ -368,4 +373,23 @@ object ConfigBuilder {
     fun tagOf(n: Node): String = tagOfId(n.id)
 
     fun tagOfId(id: String): String = "n$id"
+
+    // ── xray-мост для xhttp ──────────────────────────────────────
+    // xhttp форк sing-box не тянет → нода поднимается в standalone-xray (отдельный
+    // процесс, см. XrayController), а sing-box ходит к ней обычным socks-outbound на
+    // локальный порт. Порты раздаёт xrayBridges (тот же расчёт зовёт XrayController,
+    // вход — один и тот же список supported-нод → порты совпадают).
+    const val XRAY_BASE_PORT = 31100
+
+    data class XrayBridge(val node: Node, val tag: String, val port: Int)
+
+    fun xrayBridges(nodes: List<Node>): List<XrayBridge> =
+        nodes.distinctBy { it.id }.filter { it.isXhttp }
+            .mapIndexed { i, n -> XrayBridge(n, tagOf(n), XRAY_BASE_PORT + i) }
+
+    /** sing-box socks-outbound → локальный xray (127.0.0.1:port). */
+    private fun socksOutbound(tag: String, port: Int) = JSONObject().apply {
+        put("type", "socks"); put("tag", tag)
+        put("server", "127.0.0.1"); put("server_port", port); put("version", "5")
+    }
 }

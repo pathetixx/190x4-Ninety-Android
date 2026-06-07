@@ -18,6 +18,9 @@ env:
   HSB_TAG: v1.13.0.h5
   HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
   NDK_VERSION: 28.0.13004108
+  # xray для xhttp-нод — отдельный standalone-бинарь (libxray.so в jniLibs), НЕ сливается
+  # с libbox в один Go-бинарь (это ронял рантайм на всех нодах). Свой процесс, свои deps.
+  XRAY_TAG: v26.3.27
 
 jobs:
   build:
@@ -75,6 +78,26 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/app/libs"
           cp libbox.aar "$GITHUB_WORKSPACE/app/libs/libbox.aar"
           echo "libbox.aar -> app/libs/ ($(du -h libbox.aar | cut -f1))"
+
+      - name: Build xray binaries (standalone → jniLibs)
+        run: |
+          set -e
+          echo "Cloning xray-core ${XRAY_TAG}…"
+          git clone --depth 1 --branch "${XRAY_TAG}" https://github.com/XTLS/Xray-core.git xray
+          cd xray
+          # HEAD xray-core требует Go > версии setup-go → авто-тулчейн подтянет нужный.
+          export GOTOOLCHAIN=auto
+          # -checklinkname=0: wlynxg/anet тянет //go:linkname на приватный net.zoneCache,
+          # линкер новых Go это блокирует (как и sing-box → тот же флаг).
+          LDF="-s -w -checklinkname=0"
+          JL="$GITHUB_WORKSPACE/app/src/main/jniLibs"
+          mkdir -p "$JL/arm64-v8a" "$JL/armeabi-v7a"
+          echo "Building arm64-v8a…"
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags="$LDF" -o "$JL/arm64-v8a/libxray.so" ./main
+          echo "Building armeabi-v7a…"
+          CGO_ENABLED=0 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags="$LDF" -o "$JL/armeabi-v7a/libxray.so" ./main
+          ls -lh "$JL"/*/libxray.so
+          file "$JL/arm64-v8a/libxray.so" | grep -q "ARM aarch64" || { echo "::error::libxray.so не aarch64"; exit 1; }
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
