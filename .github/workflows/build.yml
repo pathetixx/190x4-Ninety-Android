@@ -17,9 +17,6 @@ env:
   # Ядро: hiddify-sing-box. Тег перемещаем → пин на конкретный SHA (supply-chain).
   HSB_TAG: v1.13.0.h5
   HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
-  # Второе ядро: XTLS/libXray (xray-core для xhttp-нод, two-core bridge). Пин по SHA.
-  LIBXRAY_TAG: v26.1.23
-  LIBXRAY_SHA: 118a5a67a9116eb52751e55a33bb27a02da34571
   NDK_VERSION: 28.0.13004108
 
 jobs:
@@ -78,39 +75,6 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/app/libs"
           cp libbox.aar "$GITHUB_WORKSPACE/app/libs/libbox.aar"
           echo "libbox.aar -> app/libs/ ($(du -h libbox.aar | cut -f1))"
-
-      - name: Build libXray.aar (gomobile bind, XTLS/libXray)
-        run: |
-          set -e
-          echo "Cloning libXray ${LIBXRAY_TAG}…"
-          git clone --depth 1 --branch "${LIBXRAY_TAG}" https://github.com/XTLS/libXray.git lx
-          cd lx
-          HEAD="$(git rev-parse HEAD)"
-          if [ "$HEAD" != "${LIBXRAY_SHA}" ]; then
-            echo "::error::libXray ${LIBXRAY_TAG} = $HEAD, ожидался ${LIBXRAY_SHA} (тег перемещён?)"
-            exit 1
-          fi
-          echo "Verified libXray commit $HEAD."
-
-          # gomobile/gobind — UPSTREAM golang.org/x/mobile (НЕ sagernet-форк: у xray
-          # своя цепочка; перебивает binary libbox-шага, но тот уже отработал).
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          go mod download
-          # gomobile bind требует x/mobile В ГРАФЕ модуля (новое поведение Go) —
-          # добавляем в go.mod клона, иначе «missing golang.org/x/mobile dependency».
-          go get golang.org/x/mobile/bind
-          gomobile init
-
-          # Флаги 1-в-1 из libXray build/app/android.py (checklinkname + 16KB page).
-          gomobile bind -target android -androidapi 21 \
-            -ldflags="-checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384" \
-            -o libXray.aar .
-
-          ls -lh libXray.aar
-          cp libXray.aar "$GITHUB_WORKSPACE/app/libs/libXray.aar"
-          echo "libXray.aar -> app/libs/ ($(du -h libXray.aar | cut -f1))"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
