@@ -60,10 +60,13 @@ val ThemePacks: List<ThemePack> = listOf(
         accent = Color(0xFF2BD66A), accentBright = Color(0xFF5CEE92), accentDeep = Color(0xFF1A8C45),
         accentSoft = Color(0x242BD66A), accentGlow = Color(0x522BD66A),
     ),
+    // Mono: accent — серебристо-серый, НЕ чистый белый. Раньше accent=#E8E8EE заливал
+    // ON-тумблер (ToggleRow трек = accent) сплошным белым на белом thumb. Грейзнут до
+    // #ADADB8 → трек читается серым, accentBright (#E6E6EC) держит яркие хайлайты.
     ThemePack(
         id = "mono", label = "Mono",
-        accent = Color(0xFFE8E8EE), accentBright = Color(0xFFFFFFFF), accentDeep = Color(0xFF9A9AA6),
-        accentSoft = Color(0x14E8E8EE), accentGlow = Color(0x33FFFFFF),
+        accent = Color(0xFFADADB8), accentBright = Color(0xFFE6E6EC), accentDeep = Color(0xFF73737E),
+        accentSoft = Color(0x14ADADB8), accentGlow = Color(0x2EADADB8),
     ),
 )
 

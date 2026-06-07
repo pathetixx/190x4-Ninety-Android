@@ -62,11 +62,12 @@ fun HomeScreen(onToggle: () -> Unit, onOpenProfiles: () -> Unit, onOpenNodes: ()
         ConnState.Connected -> "Защищено"
         ConnState.Stopping -> "Отключение…"
     }
+    // Кикеры — десктоп-канон (main.js STATE_KICKER / CONNECTED_KICKER), латиницей.
     val hint = when (state) {
-        ConnState.Idle -> "STAND-BY · ОТКЛЮЧЕНО"
-        ConnState.Connecting -> "ПОИСК КАНАЛА…"
-        ConnState.Connected -> "КАНАЛ ЗАЩИЩЁН"
-        ConnState.Stopping -> "ЗАВЕРШЕНИЕ…"
+        ConnState.Idle -> "STAND-BY · DISCONNECTED"
+        ConnState.Connecting -> "LINKING · NEGOTIATING"
+        ConnState.Connected -> "SECURED · TUNNEL ACTIVE"
+        ConnState.Stopping -> "STAND-BY · DISCONNECTING"
     }
     val secured = state == ConnState.Connected
 

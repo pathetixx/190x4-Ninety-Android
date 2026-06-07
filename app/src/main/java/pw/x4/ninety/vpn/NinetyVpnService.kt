@@ -31,6 +31,7 @@ import io.nekohasekai.libbox.NetworkInterfaceIterator
 import pw.x4.ninety.MainActivity
 import pw.x4.ninety.R
 import pw.x4.ninety.data.Diag
+import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Store
 import java.io.File
 import java.net.NetworkInterface as JNetworkInterface
@@ -88,6 +89,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 Diag.startRunLog(this)
                 val supported = Store.supportedActiveNodes()
                 require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
+                Options.load(this)
                 val config = ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this))
 
                 val work = File(filesDir, "work").apply { mkdirs() }
@@ -253,6 +255,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             try {
                 val supported = Store.supportedActiveNodes()
                 if (supported.isEmpty()) return@Thread
+                Options.load(this)
                 server.startOrReloadService(ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this)), OverrideOptions())
                 val name = Store.activeNodeLabel()
                 VpnController.markConnected(name)

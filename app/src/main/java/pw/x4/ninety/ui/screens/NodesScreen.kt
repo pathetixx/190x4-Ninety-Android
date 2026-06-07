@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -56,9 +57,12 @@ import pw.x4.ninety.vpn.VpnController
 fun NodesScreen() {
     val context = LocalContext.current
     val profile = Store.activeProfile()
-    val nodes = Store.activeProfileNodes()
+    val rawNodes = Store.activeProfileNodes()
     val snap = ClashMonitor.snapshot
     val connected = VpnController.state == ConnState.Connected
+    // Автосортировка по пингу (порт desktop sortNodes): живые/быстрые сверху, мёртвые
+    // и неподдержанные (xhttp) — вниз. Без пингов порядок исходный (tiebreak = index).
+    val nodes = remember(rawNodes, snap.delays) { sortByPing(rawNodes, snap.delays) }
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -134,6 +138,24 @@ private fun nodeByTag(nodes: List<Node>, tag: String?): Node? {
     if (tag == null) return null
     return nodes.firstOrNull { ConfigBuilder.tagOf(it) == tag }
 }
+
+/** Грейд задержки = desktop gradeDelay: good=0 / mid=1 / bad=2 / dead=3. */
+private fun pingGrade(ms: Int?): Int = when {
+    ms == null || ms <= 0 || ms >= 65000 -> 3
+    ms < 800 -> 0
+    ms < 1500 -> 1
+    else -> 2
+}
+
+/** Сортировка нод по пингу (GRADE_ORDER → delay → исходный индекс), порт desktop. */
+private fun sortByPing(nodes: List<Node>, delays: Map<String, Int>): List<Node> =
+    nodes.withIndex().sortedWith(
+        compareBy(
+            { pingGrade(delays[ConfigBuilder.tagOf(it.value)]) },
+            { delays[ConfigBuilder.tagOf(it.value)]?.takeIf { d -> d > 0 } ?: 99999 },
+            { it.index },
+        )
+    ).map { it.value }
 
 /** Круглый FAB-перетест: молния, при работе — вращается. */
 @Composable

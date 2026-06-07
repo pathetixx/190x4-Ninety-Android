@@ -60,15 +60,21 @@ object ClashMonitor : CommandClientHandler {
                 opts.statusInterval = 1_000_000_000L // 1s; группам не критично
                 val c = CommandClient(this, opts) // gomobile: NewCommandClient → конструктор
                 client = c
-                c.connect() // блокирует до коннекта (ретраи внутри), затем стримит в фоне
-                // первый перетест — чтобы пинги появились сразу, не ждать interval ядра
-                try { c.urlTest("auto") } catch (_: Throwable) {}
+                c.connect() // дозванивается и стартует read-loop в горутине, возвращается сразу
+                // Кикаем urltest сразу + повтор через 1.5с. Первый кик может уйти ДО того,
+                // как ядро успело подписать group-стрим (тогда замеры начнутся только по
+                // interval=600с → «авто долго собирает»). Повтор гарантирует старт замеров.
+                kickAuto(c)
+                try { Thread.sleep(1500) } catch (_: Throwable) {}
+                if (running) kickAuto(c)
             } catch (_: Throwable) {
                 // дозвониться не вышло — повторим, пока активны (ядро могло ещё не поднять сокет)
                 if (running) { try { Thread.sleep(1000) } catch (_: Throwable) {}; if (running) spawnConnect() }
             }
         }, "ninety-clash").start()
     }
+
+    private fun kickAuto(c: CommandClient) { try { c.urlTest("auto") } catch (_: Throwable) {} }
 
     /** Погасить монитор (зовётся из VpnController при Idle). */
     fun stop() {
