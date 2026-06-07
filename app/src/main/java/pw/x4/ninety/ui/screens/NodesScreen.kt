@@ -48,7 +48,7 @@ fun NodesScreen() {
             .padding(20.dp)
     ) {
         Spacer(Modifier.height(8.dp))
-        Kicker("Узлы", accent = true)
+        Kicker(if (nodes.isEmpty()) "Узлы" else "Узлы · ${nodes.size}", accent = true)
         Spacer(Modifier.height(4.dp))
         Text("Серверы", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
         Spacer(Modifier.height(12.dp))
@@ -120,6 +120,17 @@ private fun NodeRow(node: Node, selected: Boolean, onClick: () -> Unit) {
                 style = MonoStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (selected) {
+            Spacer(Modifier.size(10.dp))
+            Text(
+                "АКТИВЕН",
+                style = MonoStyle,
+                color = pack.accent,
+                modifier = Modifier
+                    .background(pack.accentSoft, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
             )
         }
     }

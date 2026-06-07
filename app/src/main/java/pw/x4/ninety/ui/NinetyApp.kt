@@ -1,5 +1,7 @@
 package pw.x4.ninety.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,7 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -29,7 +33,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -83,6 +89,7 @@ private fun NinetyBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
             )
             .navigationBarsPadding()
     ) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line2))
         Row(
             Modifier
                 .fillMaxWidth()
@@ -92,7 +99,10 @@ private fun NinetyBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
         ) {
             Dest.entries.forEach { d ->
                 val active = d == current
-                val tint = if (active) pack.accent else Ink.TextLo
+                val tint by animateColorAsState(
+                    if (active) pack.accent else Ink.TextLo,
+                    tween(220), label = "navtint",
+                )
                 Column(
                     Modifier
                         .clickable(
@@ -102,11 +112,22 @@ private fun NinetyBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
                         .padding(horizontal = 18.dp, vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    // активный индикатор — короткая accent-черта над иконкой
+                    Box(
+                        Modifier
+                            .height(2.dp)
+                            .width(if (active) 18.dp else 0.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(if (active) pack.accent else Color.Transparent)
+                    )
+                    Spacer(Modifier.height(6.dp))
                     Icon(d.icon, contentDescription = d.label, tint = tint, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.height(3.dp))
                     Text(
-                        d.label,
+                        d.label.uppercase(),
                         color = tint,
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
+                        letterSpacing = 1.2.sp,
                         textAlign = TextAlign.Center,
                     )
                 }

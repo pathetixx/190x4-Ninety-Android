@@ -1,35 +1,40 @@
 package pw.x4.ninety.ui.screens
 
-import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import pw.x4.ninety.ui.components.Kicker
+import pw.x4.ninety.ui.components.Hero
 import pw.x4.ninety.ui.theme.Ink
+import pw.x4.ninety.ui.theme.KickerStyle
 import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyState
+import pw.x4.ninety.ui.theme.NinetyTypography
 import pw.x4.ninety.vpn.ConnState
 import pw.x4.ninety.vpn.VpnController
 
@@ -38,19 +43,33 @@ fun ConnectScreen(onToggle: () -> Unit) {
     val pack = NinetyState.pack
     val state = VpnController.state
 
-    val statusText = when (state) {
+    val title = when (state) {
         ConnState.Idle -> "Не защищено"
         ConnState.Connecting -> "Подключение…"
         ConnState.Connected -> "Защищено"
         ConnState.Stopping -> "Отключение…"
     }
+    val hint = when (state) {
+        ConnState.Idle -> "STAND-BY · ОТКЛЮЧЕНО"
+        ConnState.Connecting -> "ПОИСК КАНАЛА…"
+        ConnState.Connected -> "КАНАЛ ЗАЩИЩЁН"
+        ConnState.Stopping -> "ЗАВЕРШЕНИЕ…"
+    }
+    val secured = state == ConnState.Connected
 
-    // Дыхание/вращение колец — безусловный вызов (Compose-грабля: не в if).
-    val transition = rememberInfiniteTransition(label = "hero")
-    val sweep by transition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
-        label = "sweep",
+    // text-in: при смене состояния заголовок «всплывает» (порт hero-text-in).
+    val textIn = remember { Animatable(0f) }
+    LaunchedEffect(state) {
+        textIn.snapTo(0f)
+        textIn.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
+    }
+
+    // пульс точки-кикера
+    val pulse = rememberInfiniteTransition(label = "kpulse")
+    val dotAlpha by pulse.animateFloat(
+        initialValue = 1f, targetValue = 0.4f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
+        label = "dot",
     )
 
     Column(
@@ -60,66 +79,48 @@ fun ConnectScreen(onToggle: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Kicker("Ninety", accent = true)
-        Spacer(Modifier.height(8.dp))
+        Hero(state = state, onToggle = onToggle)
+
+        Spacer(Modifier.height(28.dp))
+
         Text(
-            statusText,
-            style = pw.x4.ninety.ui.theme.NinetyTypography.headlineMedium,
-            color = if (state == ConnState.Connected) pack.accentBright else Ink.TextHi,
+            title,
+            style = NinetyTypography.headlineMedium,
+            color = if (secured) pack.accentBright else Ink.TextHi,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.graphicsLayer {
+                alpha = textIn.value
+                translationY = (1f - textIn.value) * 14f
+            },
         )
 
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(10.dp))
 
-        Box(
-            Modifier
-                .size(232.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onToggle() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val c = Offset(size.width / 2f, size.height / 2f)
-                val active = state == ConnState.Connected
-                val ringColor = if (active) pack.accent else Ink.Line3
-                // внешнее targeting-кольцо
-                drawCircle(color = ringColor, radius = size.minDimension / 2f - 6f, center = c, style = Stroke(width = 3f))
-                // внутреннее кольцо
-                drawCircle(color = if (active) pack.accentBright else Ink.Line2, radius = size.minDimension / 3.2f, center = c, style = Stroke(width = 2f))
-                // вращающаяся дуга-метка
-                val r = size.minDimension / 2f - 6f
-                drawArc(
-                    color = pack.accent,
-                    startAngle = sweep,
-                    sweepAngle = 28f,
-                    useCenter = false,
-                    topLeft = Offset(c.x - r, c.y - r),
-                    size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
-                    style = Stroke(width = 4f),
-                )
-                // центральная точка-glow
-                drawCircle(color = if (active) pack.accentGlow else Ink.Ink3, radius = size.minDimension / 5f, center = c)
-            }
-            Text(
-                if (state == ConnState.Connected || state == ConnState.Connecting) "ОТКЛЮЧИТЬ" else "ПОДКЛЮЧИТЬ",
-                style = MonoStyle,
-                color = if (state == ConnState.Connected) pack.accentBright else Ink.TextHi,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background((if (secured) pack.accent else Ink.TextLo).copy(alpha = dotAlpha))
             )
+            Spacer(Modifier.size(8.dp))
+            Text(hint, style = KickerStyle, color = Ink.TextLo)
         }
 
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(20.dp))
+
         Text(
             VpnController.activeServer
                 ?: pw.x4.ninety.data.Store.activeNode()?.name
                 ?: "Сервер не выбран",
             style = MonoStyle,
             color = Ink.TextMid,
+            textAlign = TextAlign.Center,
         )
         VpnController.lastError?.let {
             if (state == ConnState.Idle) {
                 Spacer(Modifier.height(8.dp))
-                Text(it, style = MonoStyle, color = Ink.Err)
+                Text(it, style = MonoStyle, color = Ink.Err, textAlign = TextAlign.Center)
             }
         }
     }
