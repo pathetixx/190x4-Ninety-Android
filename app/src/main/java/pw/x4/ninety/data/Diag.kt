@@ -16,6 +16,47 @@ object Diag {
     fun stderrFile(ctx: Context) = File(ctx.filesDir, "box-stderr.log")
     private fun runFile(ctx: Context) = File(ctx.filesDir, "box-run.log")
     private fun debugFile(ctx: Context) = File(ctx.filesDir, "box-debug.log")
+    private fun logcatFile(ctx: Context) = File(ctx.filesDir, "logcat.txt")
+
+    /**
+     * Снимок системного logcat при старте процесса. Нативный краш (SIGSEGV/abort в
+     * Go-рантайме xray/libbox) НЕ идёт через redirectStderr и не пишется нашими файлами —
+     * процесс умирает раньше. Но его трейс остаётся в кольцевом буфере logcat; после
+     * перезапуска приложения `logcat -d` ещё видит строки прошлого падения (Go fatal,
+     * goroutine-стек, "[signal SIGSEGV]", abort message — всё под нашим UID). Зовётся в
+     * Application.onCreate, до любого старта VPN. Без READ_LOGS видны только свои записи —
+     * достаточно для нашего краша. Тяжёлое — в отдельном потоке.
+     */
+    fun snapshotLogcat(ctx: Context) {
+        val app = ctx.applicationContext
+        Thread({
+            try {
+                val proc = ProcessBuilder("logcat", "-d", "-v", "time", "-t", "5000")
+                    .redirectErrorStream(true).start()
+                val txt = proc.inputStream.bufferedReader().readText()
+                try { proc.waitFor() } catch (_: Throwable) {}
+                // фильтруем шум: оставляем строки с маркерами падения/нашего ядра/процесса
+                val keep = txt.lineSequence().filter { l ->
+                    l.contains("ninety", true) || l.contains("libbox", true) ||
+                    l.contains("xray", true) || l.contains("GoLog", true) ||
+                    l.contains("Go ", false) || l.contains("DEBUG") ||
+                    l.contains("SIGSEGV") || l.contains("SIGABRT") || l.contains("signal ") ||
+                    l.contains("fatal", true) || l.contains("panic", true) ||
+                    l.contains("Abort message") || l.contains("AndroidRuntime") ||
+                    l.contains("art::", false) || l.contains("backtrace", true) ||
+                    l.contains("tombstone", true) || l.contains("#0") || l.contains("#01") ||
+                    l.contains("DalvikVM") || l.contains("System.err")
+                }.joinToString("\n")
+                val out = keep.ifBlank { txt.takeLast(20000) } // если фильтр пуст — хвост сырого
+                if (out.isNotBlank()) logcatFile(app).writeText(out)
+            } catch (_: Throwable) {}
+        }, "ninety-logcat-snap").start()
+    }
+
+    fun logcat(ctx: Context): String? {
+        val txt = logcatFile(ctx).takeIf { it.exists() }?.readText()?.takeIf { it.isNotBlank() } ?: return null
+        return if (txt.length > 8000) "…(начало обрезано — жми «Скопировать»)\n" + txt.takeLast(8000) else txt
+    }
 
     /** Путь для log.output sing-box — ядро пишет лог сюда САМО, минуя platform-callback
      *  (writeDebugMessage в этой libbox обычные логи не отдаёт → раньше «логов нет»). */
@@ -86,6 +127,7 @@ object Diag {
     fun fullReport(ctx: Context): String {
         val sb = StringBuilder()
         lastCrash(ctx)?.let { sb.append("== last_crash ==\n").append(it).append("\n\n") }
+        logcatFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== logcat snapshot ==\n").append(it.readText()).append("\n\n") }
         stderrFile(ctx).takeIf { it.exists() }?.let { sb.append("== box stderr ==\n").append(it.readText()).append("\n\n") }
         runFile(ctx).takeIf { it.exists() }?.let { sb.append("== box run (log.output) ==\n").append(it.readText()).append("\n\n") }
         debugFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== box debug (platform) ==\n").append(it.readText()) }
@@ -98,5 +140,6 @@ object Diag {
         stderrFile(ctx).resolveSibling("box-stderr.log.old").delete()
         runFile(ctx).delete()
         debugFile(ctx).delete()
+        logcatFile(ctx).delete()
     }
 }

@@ -14,6 +14,9 @@ class NinetyApplication : Application() {
         super.onCreate()
         // Перехват JVM-крашей в файл (диагностика без adb).
         Diag.installCrashHandler(this)
+        // Снимок logcat: ловит нативный краш ядра (SIGSEGV/abort) прошлой сессии,
+        // который мимо redirectStderr. Трейс остаётся в буфере после перезапуска.
+        Diag.snapshotLogcat(this)
         // Тема из Prefs до первой композиции.
         NinetyState.pack = packById(Prefs.get(this).themePack)
         // Загрузка узлов/активного.

@@ -339,6 +339,7 @@ private fun LogsSection(context: Context) {
     val crash = remember(refresh) { Diag.lastCrash(context) }
     val stderr = remember(refresh) { Diag.boxStderr(context) }
     val runLog = remember(refresh) { Diag.boxRun(context) }
+    val logcat = remember(refresh) { Diag.logcat(context) }
     SurfaceCard {
         Row(
             Modifier.fillMaxWidth(),
@@ -355,11 +356,15 @@ private fun LogsSection(context: Context) {
             }
         }
         Spacer(Modifier.height(10.dp))
-        if (crash == null && stderr == null && runLog == null) {
+        if (crash == null && stderr == null && runLog == null && logcat == null) {
             Text("Логов пока нет — подключись к узлу.", color = Ink.TextMid, style = NinetyTypography.bodyMedium)
         } else {
             crash?.let {
                 Text("Последний краш:", color = Ink.Err, style = NinetyTypography.titleMedium)
+                Spacer(Modifier.height(4.dp)); Text(it, color = Ink.TextMid, style = MonoStyle); Spacer(Modifier.height(10.dp))
+            }
+            logcat?.let {
+                Text("logcat (нативный краш ядра):", color = Ink.Err, style = NinetyTypography.titleMedium)
                 Spacer(Modifier.height(4.dp)); Text(it, color = Ink.TextMid, style = MonoStyle); Spacer(Modifier.height(10.dp))
             }
             stderr?.let {
