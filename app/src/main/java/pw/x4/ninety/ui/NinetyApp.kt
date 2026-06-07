@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import pw.x4.ninety.data.Updater
+import pw.x4.ninety.ui.components.UpdateModal
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.screens.HomeScreen
 import pw.x4.ninety.ui.screens.NodesScreen
@@ -73,6 +75,11 @@ fun NinetyApp(onToggleVpn: () -> Unit) {
                 Dest.Profiles -> ProfilesScreen()
                 Dest.Nodes -> NodesScreen()
                 Dest.Settings -> SettingsScreen()
+            }
+
+            // OTA-модалка поверх всего, если автопроверка нашла новую версию.
+            Updater.Available.release?.let { rel ->
+                UpdateModal(rel, onDismiss = { Updater.Available.release = null })
             }
         }
     }

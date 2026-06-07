@@ -32,6 +32,11 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_ACTIVE_PROFILE, null)
         set(v) = sp.edit().putString(KEY_ACTIVE_PROFILE, v).apply()
 
+    // Версия, на которую юзер нажал «Позже» в OTA-модалке — больше не навязываем её.
+    var skippedVersion: String?
+        get() = sp.getString(KEY_SKIPPED_VERSION, null)
+        set(v) = sp.edit().putString(KEY_SKIPPED_VERSION, v).apply()
+
     companion object {
         private const val KEY_THEME = "theme_pack"
         private const val KEY_AUTO_UPDATE = "auto_update_check"
@@ -39,6 +44,7 @@ class Prefs(context: Context) {
         private const val KEY_SUB_URL = "subscription_url"
         private const val KEY_AUTO_CONNECT = "auto_connect"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
+        private const val KEY_SKIPPED_VERSION = "skipped_version"
 
         @Volatile private var instance: Prefs? = null
         fun get(context: Context): Prefs =

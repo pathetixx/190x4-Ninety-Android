@@ -5,6 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -34,6 +37,14 @@ object Updater {
     }
 
     data class Release(val version: String, val apkUrl: String, val notes: String)
+
+    /**
+     * Найденный при старте релиз для показа OTA-модалки (как окно апдейта в Windows-Ninety).
+     * MainActivity заполняет при автопроверке (с учётом «Позже»), NinetyApp показывает модалку.
+     */
+    object Available {
+        var release by mutableStateOf<Release?>(null)
+    }
 
     /** Проверка обновления. onDone(релиз-если-новее|null, error|null) на main-потоке. */
     fun check(onLoading: () -> Unit, onDone: (newer: Release?, error: String?) -> Unit) {

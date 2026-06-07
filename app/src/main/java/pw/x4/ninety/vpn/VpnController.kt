@@ -30,10 +30,14 @@ object VpnController {
     val isActive: Boolean get() = state == ConnState.Connecting || state == ConnState.Connected
 
     fun markConnecting() = post { state = ConnState.Connecting; lastError = null }
-    fun markConnected(name: String?) = post { state = ConnState.Connected; activeServer = name }
+    fun markConnected(name: String?) = post {
+        state = ConnState.Connected; activeServer = name
+        ClashMonitor.start() // ядро поднято → читаем пинги/эффективный узел
+    }
     fun markIdle(error: String?) = post {
         state = ConnState.Idle
         activeServer = null
+        ClashMonitor.stop()
         if (error != null) lastError = error
     }
 }

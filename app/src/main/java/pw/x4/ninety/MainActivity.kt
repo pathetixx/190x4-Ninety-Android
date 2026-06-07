@@ -36,13 +36,14 @@ class MainActivity : ComponentActivity() {
         maybeCheckUpdate()
     }
 
-    /** Тихая проверка обновлений при запуске — Toast только если есть новее. */
+    /** Тихая проверка обновлений при запуске → OTA-модалка, если версия новее и не «отложена». */
     private fun maybeCheckUpdate() {
-        if (!Prefs.get(this).autoUpdateCheck) return
+        val prefs = Prefs.get(this)
+        if (!prefs.autoUpdateCheck) return
         Updater.check(onLoading = {}, onDone = { newer, _ ->
-            if (newer != null) Toast.makeText(
-                this, "Доступна версия ${newer.version} — Настройки → Обновление", Toast.LENGTH_LONG,
-            ).show()
+            if (newer != null && newer.version != prefs.skippedVersion) {
+                Updater.Available.release = newer
+            }
         })
     }
 

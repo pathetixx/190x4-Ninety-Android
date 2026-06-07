@@ -128,6 +128,28 @@ fun PillButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = t
     )
 }
 
+/**
+ * Пилюля пинга ноды (грейд по задержке, как .prox__ping на desktop). null/0/>=65000
+ * = недоступна → «—». Цвета: <800 зелёный, <1500 янтарь, иначе красный.
+ */
+@Composable
+fun PingPill(ms: Int?, modifier: Modifier = Modifier) {
+    val dead = ms == null || ms <= 0 || ms >= 65000
+    val color = when {
+        dead -> Ink.TextLo
+        ms!! < 800 -> Ink.Ok
+        ms < 1500 -> Ink.Warn
+        else -> Ink.Err
+    }
+    Row(modifier, verticalAlignment = Alignment.Bottom) {
+        Text(if (dead) "—" else "$ms", style = NinetyTypography.titleMedium, color = color)
+        if (!dead) {
+            Spacer(Modifier.width(2.dp))
+            Text("мс", style = KickerStyle, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 2.dp))
+        }
+    }
+}
+
 /** Строка-переключатель: лейбл (+подпись) слева, пилюля-тумблер справа. */
 @Composable
 fun ToggleRow(label: String, checked: Boolean, sub: String? = null, onToggle: (Boolean) -> Unit) {

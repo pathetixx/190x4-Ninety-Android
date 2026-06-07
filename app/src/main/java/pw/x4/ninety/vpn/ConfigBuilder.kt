@@ -6,8 +6,9 @@ import pw.x4.ninety.data.Node
 
 /**
  * Генератор sing-box JSON под Android (порт singbox.js). Всегда tun-inbound
- * (фактический tun отдаёт libbox.OpenTun через VpnService). Один узел → outbound
- * "proxy"; несколько → selector "proxy" + balancer "auto" + urltest "lowest".
+ * (фактический tun отдаёт libbox.OpenTun через VpnService). Узлы всегда заворачиваются
+ * в selector "proxy" (default = выбранная нода | "auto") + urltest "auto": urltest даёт
+ * авто-выбор по задержке (.now = быстрейший) и пинги нод для UI (group-стрим CommandClient).
  * xhttp-узлы вызывающий код отсеивает заранее (нужен xray, M3).
  */
 object ConfigBuilder {
@@ -17,55 +18,41 @@ object ConfigBuilder {
 
     fun build(nodes: List<Node>, selectedId: String?, logPath: String? = null): String {
         require(nodes.isNotEmpty()) { "пустой список нод" }
-        val multi = nodes.size >= 2
+
+        // Дедуп по идентичности — иначе две одинаковые ноды дают один и тот же
+        // outbound-tag, и ядро падает на дубликате.
+        val uniq = nodes.distinctBy { it.id }
 
         val nodeOutbounds = JSONArray()
         val nodeTags = ArrayList<String>()
         var selectedTag: String? = null
-        nodes.forEachIndexed { i, n ->
-            val tag = if (multi) tagFor(i, n) else "proxy"
+        uniq.forEach { n ->
+            val tag = tagOf(n)
             nodeTags.add(tag)
             if (n.id == selectedId) selectedTag = tag
             nodeOutbounds.put(outbound(n, tag))
         }
-
-        // auto-режим = несколько нод И конкретная НЕ выбрана. Тогда нужен urltest+balancer.
-        // Если нода выбрана — чистый selector без них: иначе urltest пингует ВСЕ ноды
-        // (десятки vless+reality хендшейков) на старте и тормозит первое подключение.
         val validSelected = selectedTag?.takeIf { nodeTags.contains(it) }
-        val useAuto = multi && validSelected == null
 
+        // Всегда selector "proxy" (default = выбранная нода | "auto") + urltest "auto".
+        // urltest держим ВСЕГДА, а не только в auto-режиме: он одновременно health-checker
+        // авто-выбора (его .now = быстрейший узел, как на desktop) И единственный источник
+        // пингов нод для UI (читаем через CommandClient group-стрим: URLTestDelay по тегам).
+        // Это и есть фикс «авто без имени сервера» и «пинг не отображается».
         val outbounds = JSONArray()
-        if (multi) {
-            val selectorList = JSONArray().apply {
-                if (useAuto) { put("auto"); put("lowest") }
-                nodeTags.forEach { put(it) }
-            }
-            outbounds.put(JSONObject().apply {
-                put("type", "selector"); put("tag", "proxy")
-                put("outbounds", selectorList)
-                put("default", validSelected ?: "auto")
-                put("interrupt_exist_connections", true)
-            })
-            if (useAuto) {
-                val tagsArr = JSONArray().apply { nodeTags.forEach { put(it) } }
-                // balancer "auto" — lowest-delay per-connection
-                outbounds.put(JSONObject().apply {
-                    put("type", "balancer"); put("tag", "auto")
-                    put("outbounds", tagsArr)
-                    put("strategy", "lowest-delay")
-                    put("delay_acceptable_ratio", 2)
-                    put("interrupt_exist_connections", true)
-                })
-                // urltest "lowest" — health-checker для авто-выбора
-                outbounds.put(JSONObject().apply {
-                    put("type", "urltest"); put("tag", "lowest")
-                    put("outbounds", tagsArr)
-                    put("url", TEST_URL); put("interval", INTERVAL); put("tolerance", 50)
-                    put("interrupt_exist_connections", false)
-                })
-            }
-        }
+        val tagsArr = JSONArray().apply { nodeTags.forEach { put(it) } }
+        outbounds.put(JSONObject().apply {
+            put("type", "selector"); put("tag", "proxy")
+            put("outbounds", JSONArray().apply { put("auto"); nodeTags.forEach { put(it) } })
+            put("default", validSelected ?: "auto")
+            put("interrupt_exist_connections", true)
+        })
+        outbounds.put(JSONObject().apply {
+            put("type", "urltest"); put("tag", "auto")
+            put("outbounds", tagsArr)
+            put("url", TEST_URL); put("interval", INTERVAL); put("tolerance", 50)
+            put("interrupt_exist_connections", false)
+        })
         for (i in 0 until nodeOutbounds.length()) outbounds.put(nodeOutbounds.get(i))
         outbounds.put(JSONObject().apply { put("type", "direct"); put("tag", "direct") })
 
@@ -219,8 +206,12 @@ object ConfigBuilder {
         alpn.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { put(it) }
     }
 
-    private fun tagFor(i: Int, n: Node): String {
-        val safe = n.name.replace("[^A-Za-z0-9_.-]".toRegex(), "-").take(20)
-        return "n$i-$safe"
-    }
+    /**
+     * Clash-tag ноды — index-независимый, чисто по идентичности ноды. Тот же
+     * расчёт зовёт UI, чтобы сопоставить ноду с её URLTestDelay из group-стрима
+     * (порядок/фильтрация списков в UI и в конфиге может расходиться → по тегу надёжнее).
+     */
+    fun tagOf(n: Node): String = tagOfId(n.id)
+
+    fun tagOfId(id: String): String = "n$id"
 }

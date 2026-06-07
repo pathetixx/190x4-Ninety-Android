@@ -39,12 +39,15 @@ import pw.x4.ninety.data.Profile
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.Hero
 import pw.x4.ninety.ui.components.IconTile
+import pw.x4.ninety.ui.components.PingPill
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
 import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
+import pw.x4.ninety.vpn.ClashMonitor
+import pw.x4.ninety.vpn.ConfigBuilder
 import pw.x4.ninety.vpn.ConnState
 import pw.x4.ninety.vpn.VpnController
 
@@ -189,6 +192,15 @@ private fun LocationTile(onClick: () -> Unit) {
     val auto = Store.isAutoActive
     val node = Store.activeNode()
     val hasSelection = auto || node != null
+    val snap = ClashMonitor.snapshot
+
+    // В авто-режиме показываем реальный выбранный узел (как desktop: auto.now).
+    val effNode = if (auto) snap.autoNow?.let { tag -> Store.activeProfileNodes().firstOrNull { ConfigBuilder.tagOf(it) == tag } } else null
+    val ping: Int? = when {
+        auto -> snap.autoNow?.let { snap.delays[it] }
+        node != null -> snap.delays[ConfigBuilder.tagOf(node)]
+        else -> null
+    }
 
     Row(
         Modifier
@@ -215,14 +227,22 @@ private fun LocationTile(onClick: () -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             val subtitle = when {
-                auto -> "БЫСТРЕЙШИЙ УЗЕЛ"
+                auto -> effNode?.let { "→ ${it.name.ifBlank { it.host }}" } ?: "БЫСТРЕЙШИЙ УЗЕЛ"
                 node != null -> "${node.proto.uppercase()} · ${if (node.security != "none") node.security.uppercase() else node.host}"
                 else -> null
             }
             subtitle?.let {
                 Spacer(Modifier.height(3.dp))
-                Text(it, style = KickerStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    it, style = KickerStyle,
+                    color = if (auto && effNode != null) pack.accentBright else Ink.TextLo,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
+        }
+        if (hasSelection) {
+            Spacer(Modifier.width(8.dp))
+            PingPill(ping)
         }
         Spacer(Modifier.width(8.dp))
         Icon(NinetyIcons.ChevronRight, contentDescription = null, tint = Ink.TextFaint, modifier = Modifier.size(14.dp))
