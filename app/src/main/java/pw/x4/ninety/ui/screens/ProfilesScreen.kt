@@ -33,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -142,9 +144,13 @@ private fun ProfileCard(profile: Profile, active: Boolean, onSelect: () -> Unit,
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(if (active) pack.accentSoft else Ink.Ink1, RoundedCornerShape(16.dp))
-            .border(1.dp, if (active) pack.accent else Ink.Line2, RoundedCornerShape(16.dp))
-            .topHairline()
+            .background(
+                if (active) Brush.verticalGradient(0f to pack.accentSoft, 0.4f to Ink.Ink1, 1f to Ink.Ink1)
+                else SolidColor(Ink.Ink1),
+                RoundedCornerShape(16.dp),
+            )
+            .border(1.dp, if (active) pack.accentSoft else Ink.Line2, RoundedCornerShape(16.dp))
+            .topHairline(color = if (active) pack.accent else Color.White, alpha = if (active) 0.5f else 0.08f)
             .clickable { onSelect() }
             .padding(14.dp),
     ) {

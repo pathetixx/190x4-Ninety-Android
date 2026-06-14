@@ -54,13 +54,13 @@ fun Modifier.premiumCard(shape: Shape = RoundedCornerShape(14.dp)): Modifier = t
  * Вешать ПОСЛЕ собственных `background`/`border` карточки (для active-состояний с
  * accent-фоном); требует `clip(shape)` выше по цепочке, иначе линия вылезет за скругление.
  */
-fun Modifier.topHairline(): Modifier = this.drawWithContent {
+fun Modifier.topHairline(color: Color = Color.White, alpha: Float = 0.08f): Modifier = this.drawWithContent {
     drawContent()
     drawRect(
         brush = Brush.horizontalGradient(
             0.0f to Color.Transparent,
-            0.3f to Color.White.copy(alpha = 0.08f),
-            0.7f to Color.White.copy(alpha = 0.08f),
+            0.3f to color.copy(alpha = alpha),
+            0.7f to color.copy(alpha = alpha),
             1.0f to Color.Transparent,
         ),
         topLeft = Offset.Zero,

@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -196,9 +199,13 @@ private fun AutoRow(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) pack.accentSoft else Ink.Ink1, RoundedCornerShape(14.dp))
-            .border(1.dp, if (selected) pack.accent else Ink.Line2, RoundedCornerShape(14.dp))
-            .topHairline()
+            .background(
+                if (selected) Brush.verticalGradient(0f to pack.accentSoft, 0.5f to Ink.Ink1, 1f to Ink.Ink1)
+                else SolidColor(Ink.Ink1),
+                RoundedCornerShape(14.dp),
+            )
+            .border(1.dp, if (selected) pack.accentSoft else Ink.Line2, RoundedCornerShape(14.dp))
+            .topHairline(color = if (selected) pack.accent else Color.White, alpha = if (selected) 0.5f else 0.08f)
             .clickable { onClick() }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -230,9 +237,13 @@ private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Un
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) pack.accentSoft else Ink.Ink1, RoundedCornerShape(14.dp))
-            .border(1.dp, if (selected) pack.accent else Ink.Line2, RoundedCornerShape(14.dp))
-            .topHairline()
+            .background(
+                if (selected) Brush.verticalGradient(0f to pack.accentSoft, 0.5f to Ink.Ink1, 1f to Ink.Ink1)
+                else SolidColor(Ink.Ink1),
+                RoundedCornerShape(14.dp),
+            )
+            .border(1.dp, if (selected) pack.accentSoft else Ink.Line2, RoundedCornerShape(14.dp))
+            .topHairline(color = if (selected) pack.accent else Color.White, alpha = if (selected) 0.5f else 0.08f)
             .clickable { onClick() }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
