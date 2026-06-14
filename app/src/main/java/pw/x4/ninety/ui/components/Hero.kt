@@ -1,5 +1,12 @@
 package pw.x4.ninety.ui.components
 
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.view.Surface
+import android.view.TextureView
+import android.view.View
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -10,7 +17,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,16 +40,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import pw.x4.ninety.R
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.NinetyState
@@ -60,10 +68,11 @@ private fun ConnState.phase() = when (this) {
 }
 
 /**
- * Targeting-hero: порт `.hero__stage` из desktop-Ninety (app.css).
- * Слои снизу вверх: halo (radial glow + breath) → glow под диском → кольца 67/83/100%
- * → tickmarks → sweep-комета → burst/lock/ripple переходы → диск с маской oni.
- * Скорости дыхания/sweep зависят от фазы (standby медленно, linking быстро, secured плавно).
+ * Targeting-hero: порт `.hero__stage` из desktop-Ninety (app.css + index.html).
+ * Слои снизу вверх: halo (radial glow + breath) → glow под диском (box-shadow 32→60px)
+ * → кольца 67/83/100% → tickmarks → sweep-комета → burst/lock/ripple переходы → диск с
+ * АНИМИРОВАННОЙ маской самурая (webm, как `<video class=hero__mask>`).
+ * Скорости дыхания/sweep и фильтр маски зависят от фазы (standby/linking/secured).
  */
 @Composable
 fun Hero(
@@ -89,15 +98,6 @@ fun Hero(
         initialValue = 0f, targetValue = 360f,
         animationSpec = infiniteRepeatable(tween(sweepMs, easing = LinearEasing), RepeatMode.Restart),
         label = "sweep",
-    )
-    // Хром-блик по маске: медленный диагональный проход. Линейно гоняем 0..1, позицию
-    // уводим далеко за края (±2·ширины) → блик виден лишь при пересечении центра,
-    // между проходами естественная пауза (≈60% цикла маска без блика). Замена webm.
-    val shimmerMs = when (phase) { Phase.Linking -> 3200; else -> 5400 }
-    val shimmer by infinite.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(shimmerMs, easing = LinearEasing), RepeatMode.Restart),
-        label = "shimmer",
     )
 
     // ── Переходы между состояниями: burst (вспышка), lock (фикс-кольцо secured) ──
@@ -126,12 +126,17 @@ fun Hero(
     val accent = pack.accent
     val accentBright = pack.accentBright
 
-    // Per-state фильтр маски (порт .hero__mask из app.css: brightness/saturate/contrast
-    // + drop-shadow в secured). Плавный кросс-фейд 500ms как `transition: filter` desktop.
+    // Per-state фильтр маски (порт .hero__mask из app.css: brightness/saturate/contrast).
+    // Плавный кросс-фейд 500ms как `transition: filter` desktop.
     val targetBright = when (phase) { Phase.Linking -> 1.05f; Phase.Secured -> 1.08f; else -> 0.92f }
     val targetSat = when (phase) { Phase.Linking -> 1.10f; Phase.Secured -> 1.05f; else -> 0.92f }
     val maskBright by animateFloatAsState(targetBright, tween(500, easing = FastOutSlowInEasing), label = "maskBright")
     val maskSat by animateFloatAsState(targetSat, tween(500, easing = FastOutSlowInEasing), label = "maskSat")
+
+    // Свечение диска: box-shadow accent-glow 32px (standby) → 60px (secured) — главный
+    // off/on сигнал. Анимируем радиус+насыщенность glow под диском плавно 500ms.
+    val glowTarget = when (phase) { Phase.Secured -> 1f; Phase.Linking -> 0.6f; else -> 0.25f }
+    val glow by animateFloatAsState(glowTarget, tween(500, easing = FastOutSlowInEasing), label = "discGlow")
 
     Box(modifier.size(stageSize), contentAlignment = Alignment.Center) {
         // ── Halo: мягкое радиальное свечение с дыханием ──
@@ -157,14 +162,15 @@ fun Hero(
             val c = Offset(size.width / 2f, size.height / 2f)
             val half = size.minDimension / 2f
 
-            // glow под диском (замена box-shadow accent-glow)
+            // glow под диском (замена box-shadow accent-glow 32→60px): растёт с состоянием
+            val glowRadius = half * lerp(0.55f, 0.74f, glow)
             drawCircle(
                 brush = Brush.radialGradient(
-                    0f to accent.copy(alpha = if (secured) 0.30f else 0.16f),
+                    0f to accent.copy(alpha = lerp(0.12f, 0.34f, glow)),
                     1f to Color.Transparent,
-                    center = c, radius = half * 0.62f,
+                    center = c, radius = glowRadius,
                 ),
-                radius = half * 0.62f, center = c,
+                radius = glowRadius, center = c,
             )
 
             // кольцо 100% (dashed, тусклое)
@@ -229,8 +235,9 @@ fun Hero(
             }
         }
 
-        // ── Диск с маской oni ──
+        // ── Диск с анимированной маской самурая (webm) ──
         val discSize = stageSize * 0.54f
+        val maskScale = 1f + breath * 0.015f
         Box(
             Modifier
                 .size(discSize)
@@ -249,49 +256,92 @@ fun Hero(
                 ) { rippleKey++; onToggle() },
             contentAlignment = Alignment.Center,
         ) {
-            // Маска: per-state фильтр + лёгкое дыхание по яркости (±0.03) и масштабу (±1.5%).
-            val breathBright = maskBright + breath * 0.03f
-            val maskScale = 1f + breath * 0.015f
-            Image(
-                painter = painterResource(R.drawable.oni_mask),
-                contentDescription = null,
+            HeroMaskVideo(
+                brightness = maskBright,
+                saturation = maskSat,
+                contrast = 1.05f,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { scaleX = maskScale; scaleY = maskScale },
-                contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.colorMatrix(heroMaskMatrix(breathBright, maskSat, 1.05f)),
             )
-            // Хром-блик: широкий мягкий диагональный sheen, уезжает за края между проходами.
-            val sweep = lerp(-2.0f, 2.0f, shimmer)
-            val sheen = (if (secured) accentBright else Color.White)
-                .copy(alpha = if (phase == Phase.Linking) 0.16f else if (secured) 0.13f else 0.09f)
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { rotationZ = 22f; translationX = size.width * sweep }
-                    .background(
-                        Brush.horizontalGradient(
-                            0.0f to Color.Transparent,
-                            0.5f to sheen,
-                            1.0f to Color.Transparent,
-                        )
-                    )
-            )
-            if (secured) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                0.55f to Color.Transparent,
-                                1.0f to pack.accentGlow,
-                            )
-                        )
-                )
+        }
+    }
+}
+
+/**
+ * Анимированная маска самурая — порт `<video class="hero__mask">` desktop:
+ * локальный webm из res/raw, луп, без звука, скорость 0.7 (как `playbackRate` desktop).
+ * Рендер в [TextureView] (клипуется в кружок родителем, в отличие от SurfaceView).
+ * Per-state фильтр (brightness/saturate/contrast) — через hardware-layer
+ * [ColorMatrixColorFilter] на самой View. Пауза/релиз по жизненному циклу — батарея.
+ */
+@Composable
+private fun HeroMaskVideo(
+    brightness: Float,
+    saturation: Float,
+    contrast: Float,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val player = remember { MediaPlayer().apply { isLooping = true; setVolume(0f, 0f) } }
+    var prepared by remember { mutableStateOf(false) }
+    val layerPaint = remember { Paint() }
+    // last-applied фильтр: setLayerType дёргаем только при изменении (иначе каждый кадр).
+    val lastFilter = remember { floatArrayOf(Float.NaN, Float.NaN) }
+
+    val textureView = remember {
+        TextureView(context).apply {
+            isOpaque = true
+            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+                    runCatching {
+                        player.setSurface(Surface(st))
+                        context.resources.openRawResourceFd(R.raw.hero_mask).use { afd ->
+                            player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                        }
+                        player.setOnPreparedListener { mp ->
+                            runCatching { mp.playbackParams = mp.playbackParams.setSpeed(0.7f) }
+                            runCatching { mp.start() }
+                            prepared = true
+                        }
+                        player.prepareAsync()
+                    }
+                }
+
+                override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
+                override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = true
+                override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
             }
         }
     }
+
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, e ->
+            when (e) {
+                Lifecycle.Event.ON_PAUSE -> runCatching { if (player.isPlaying) player.pause() }
+                Lifecycle.Event.ON_RESUME -> runCatching { if (prepared && !player.isPlaying) player.start() }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            runCatching { player.release() }
+        }
+    }
+
+    AndroidView(
+        factory = { textureView },
+        modifier = modifier,
+        update = { tv ->
+            if (lastFilter[0] != brightness || lastFilter[1] != saturation) {
+                layerPaint.colorFilter = ColorMatrixColorFilter(androidMaskMatrix(brightness, saturation, contrast))
+                tv.setLayerType(View.LAYER_TYPE_HARDWARE, layerPaint)
+                lastFilter[0] = brightness; lastFilter[1] = saturation
+            }
+        },
+    )
 }
 
 /** Деления-радар по кольцу: 60 минорных, мажорные каждые 5. */
@@ -316,13 +366,13 @@ private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
 /**
  * Фильтр маски как CSS `.hero__mask`: saturation → contrast (вокруг середины) → brightness.
- * ColorMatrix работает в шкале 0..255, потому offset контраста = 127.5·(1−c).
+ * android.graphics.ColorMatrix (шкала 0..255), offset контраста = 127.5·(1−c).
  */
-private fun heroMaskMatrix(brightness: Float, saturation: Float, contrast: Float): ColorMatrix {
-    val m = ColorMatrix().apply { setToSaturation(saturation) }
+private fun androidMaskMatrix(brightness: Float, saturation: Float, contrast: Float): android.graphics.ColorMatrix {
     val o = 127.5f * (1f - contrast)
-    m.timesAssign(
-        ColorMatrix(
+    val out = android.graphics.ColorMatrix().apply { setSaturation(saturation) }
+    out.postConcat(
+        android.graphics.ColorMatrix(
             floatArrayOf(
                 contrast, 0f, 0f, 0f, o,
                 0f, contrast, 0f, 0f, o,
@@ -331,8 +381,8 @@ private fun heroMaskMatrix(brightness: Float, saturation: Float, contrast: Float
             )
         )
     )
-    m.timesAssign(
-        ColorMatrix(
+    out.postConcat(
+        android.graphics.ColorMatrix(
             floatArrayOf(
                 brightness, 0f, 0f, 0f, 0f,
                 0f, brightness, 0f, 0f, 0f,
@@ -341,5 +391,5 @@ private fun heroMaskMatrix(brightness: Float, saturation: Float, contrast: Float
             )
         )
     )
-    return m
+    return out
 }
