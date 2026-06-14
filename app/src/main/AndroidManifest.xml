@@ -17,10 +17,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="false"
         android:usesCleartextTraffic="true"
+        android:extractNativeLibs="true"
         android:theme="@style/Theme.Ninety">
-        <!-- extractNativeLibs убран (был для exec xray-бинаря с диска; xray выпилен).
-             libbox грузится System.loadLibrary, работает и со сжатыми .so → APK легче. -->
-        <!-- (атрибут опущен = дефолт AGP: useLegacyPackaging=false, libs сжаты в APK) -->
+        <!-- extractNativeLibs=true: либы СЖАТЫ в APK (DEFLATE) → download маленький
+             (sideload с GitHub). false выровнял бы их несжато под mmap (меньше место
+             установки, но APK +~35 МБ) — нам не надо. Когда-то было для exec xray, но
+             и без xray компрессия libbox выгоднее для размера скачивания. -->
 
         <activity
             android:name=".MainActivity"
