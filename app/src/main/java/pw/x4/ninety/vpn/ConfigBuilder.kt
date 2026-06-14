@@ -10,7 +10,7 @@ import pw.x4.ninety.data.Options
  * (фактический tun отдаёт libbox.OpenTun через VpnService). Узлы всегда заворачиваются
  * в selector "proxy" (default = выбранная нода | "auto") + urltest "auto": urltest даёт
  * авто-выбор по задержке (.now = быстрейший) и пинги нод для UI (group-стрим CommandClient).
- * xhttp-узлы вызывающий код отсеивает заранее (нужен xray, M3).
+ * xhttp-узлы строятся нативным transport=xhttp форка (см. transport()), как обычный vless.
  *
  * ⚙️ Параметризован через [Options]: при дефолтных опциях выдаёт КОНФИГ, идентичный
  * прежнему захардкоженному (проверен на железе). Каждая опция влияет на JSON только при
@@ -439,14 +439,4 @@ object ConfigBuilder {
 
     fun tagOfId(id: String): String = "n$id"
 
-    // ── xray-мост для xhttp (ОТКЛЮЧЁН) ───────────────────────────
-    // xhttp теперь строится нативным outbound форка hiddify-sing-box (transport=xhttp,
-    // см. transport()), как у hiddify-app — standalone-xray больше не нужен. Возвращаем
-    // пустой список: XrayController.start при пустых мостах гасит xray и выходит, build()
-    // строит все ноды нативно. Код XrayController оставлен на случай отката.
-    const val XRAY_BASE_PORT = 31100
-
-    data class XrayBridge(val node: Node, val tag: String, val port: Int)
-
-    fun xrayBridges(nodes: List<Node>): List<XrayBridge> = emptyList()
 }

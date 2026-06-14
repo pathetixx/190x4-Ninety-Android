@@ -46,7 +46,7 @@ data class Node(
     /** Стабильный id для выбора/персиста. */
     val id: String get() = "$proto|$host|$port|$uuid$password".hashCode().toString()
 
-    /** Все узлы поддержаны: обычные — libbox, xhttp — локальный xray (см. [XrayController]). */
+    /** Все узлы поддержаны нативно libbox (xhttp — через transport=xhttp форка). */
     val supported: Boolean get() = true
 
     /** xhttp-транспорт: sing-box его не тянет, поднимается через standalone-xray + socks-мост. */

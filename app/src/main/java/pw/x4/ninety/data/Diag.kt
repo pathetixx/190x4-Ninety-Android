@@ -17,9 +17,9 @@ object Diag {
     private fun runFile(ctx: Context) = File(ctx.filesDir, "box-run.log")
     private fun debugFile(ctx: Context) = File(ctx.filesDir, "box-debug.log")
     private fun logcatFile(ctx: Context) = File(ctx.filesDir, "logcat.txt")
-    /** Лог standalone-xray (XrayController пишет сюда stdout/stderr процесса). */
+    // Legacy-файлы старого standalone-xray (xhttp теперь нативный в sing-box). Больше
+    // не пишутся; функции оставлены — fullReport их просто не находит (no-op).
     fun xrayFile(ctx: Context) = File(ctx.filesDir, "xray.log")
-    /** Сгенерированный конфиг xray — для сверки с десктопом байт-в-байт. */
     fun xrayConfigFile(ctx: Context) = File(ctx.filesDir, "xray-config.json")
 
     fun xrayLog(ctx: Context): String? {
