@@ -37,6 +37,12 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_SKIPPED_VERSION, null)
         set(v) = sp.edit().putString(KEY_SKIPPED_VERSION, v).apply()
 
+    // versionCode прошлого запуска. Рост = приложение обновилось → самолечение нод
+    // (перепарс из raw текущим LinkParser, подхватывает фиксы парсера/конфига).
+    var lastSeenVersionCode: Int
+        get() = sp.getInt(KEY_LAST_VERSION, 0)
+        set(v) = sp.edit().putInt(KEY_LAST_VERSION, v).apply()
+
     companion object {
         private const val KEY_THEME = "theme_pack"
         private const val KEY_AUTO_UPDATE = "auto_update_check"
@@ -45,6 +51,7 @@ class Prefs(context: Context) {
         private const val KEY_AUTO_CONNECT = "auto_connect"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
         private const val KEY_SKIPPED_VERSION = "skipped_version"
+        private const val KEY_LAST_VERSION = "last_seen_version_code"
 
         @Volatile private var instance: Prefs? = null
         fun get(context: Context): Prefs =

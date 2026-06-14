@@ -21,6 +21,14 @@ class NinetyApplication : Application() {
         NinetyState.pack = packById(Prefs.get(this).themePack)
         // Загрузка узлов/активного.
         Store.init(this)
+        // Самолечение после апдейта: при росте versionCode перечитать ноды из raw
+        // текущим парсером (поднимает фиксы парсера/конфига — раньше требовалось
+        // вручную передобавлять подписку). Локально, без сети.
+        val prefs = Prefs.get(this)
+        if (BuildConfig.VERSION_CODE > prefs.lastSeenVersionCode) {
+            Store.reparseAllFromRaw()
+            prefs.lastSeenVersionCode = BuildConfig.VERSION_CODE
+        }
         // Настройки ядра (для tile-старта VPN без открытия аппы).
         Options.load(this)
         // Контекст для пинка QS-плитки при смене состояния туннеля.

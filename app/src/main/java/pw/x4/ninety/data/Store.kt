@@ -143,6 +143,30 @@ object Store {
         if (i >= 0) profiles[i] = p else profiles.add(p)
     }
 
+    /**
+     * Самолечение после апдейта: перечитать КАЖДУЮ ноду из её исходной ссылки (`raw`)
+     * текущим [LinkParser]. Подхватывает поля, которые добавили новые версии парсера
+     * (например xhttp `extra`: downloadSettings/xmux/паддинги с v0.1.15) — раньше для
+     * этого приходилось вручную передобавлять подписку. Локально, без сети.
+     *
+     * id ноды стабилен (хэш не зависит от `type`/`extra`) → активный выбор НЕ слетает;
+     * `subId`/`fromSub` сохраняем (привязка к профилю). Ноды без `raw` или с битой
+     * ссылкой остаются как есть. Возвращает число фактически изменившихся нод.
+     */
+    fun reparseAllFromRaw(): Int {
+        if (!::nodesFile.isInitialized || nodes.isEmpty()) return 0
+        var healed = 0
+        val rebuilt = nodes.map { old ->
+            if (old.raw.isBlank()) return@map old
+            val fresh = LinkParser.parseLink(old.raw) ?: return@map old
+            val merged = fresh.copy(subId = old.subId, fromSub = old.fromSub)
+            if (merged.toJson().toString() != old.toJson().toString()) healed++
+            merged
+        }
+        if (healed > 0) { nodes.clear(); nodes.addAll(rebuilt); saveAll() }
+        return healed
+    }
+
     fun clear() {
         nodes.clear(); profiles.clear()
         activeId = null; activeProfileId = null
