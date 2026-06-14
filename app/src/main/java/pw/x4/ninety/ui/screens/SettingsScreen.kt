@@ -124,17 +124,17 @@ private fun SettingsMenu(onOpen: (String) -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
-                    .background(Ink.Ink2, RoundedCornerShape(14.dp))
-                    .border(1.dp, Ink.Line2, RoundedCornerShape(14.dp))
+                    .background(Ink.Ink1, RoundedCornerShape(10.dp))
+                    .border(1.dp, Ink.Line1, RoundedCornerShape(10.dp))
                     .clickable { onOpen(s.key) }
-                    .padding(horizontal = 14.dp, vertical = 13.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.size(34.dp).background(Ink.Ink3, RoundedCornerShape(9.dp)),
+                    Modifier.size(36.dp).background(Ink.Ink2, RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center,
-                ) { Icon(s.icon, null, tint = NinetyState.pack.accent, modifier = Modifier.size(18.dp)) }
-                Spacer(Modifier.width(13.dp))
+                ) { Icon(s.icon, null, tint = Ink.TextMid, modifier = Modifier.size(18.dp)) }
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(s.title, style = NinetyTypography.titleMedium, color = Ink.TextHi)
                     Spacer(Modifier.height(2.dp))
@@ -152,7 +152,7 @@ private fun SettingsMenu(onOpen: (String) -> Unit) {
 private fun SectionScaffold(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 24.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -162,10 +162,12 @@ private fun SectionScaffold(title: String, onBack: () -> Unit, content: @Composa
             Spacer(Modifier.width(4.dp))
             Text(title, style = NinetyTypography.headlineMedium, color = Ink.TextHi)
         }
+        // Разделитель под хедером (порт settings-head border-bottom: 1px line-1)
+        Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(1.dp).background(Ink.Line1))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         ) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(18.dp))
             content()
             Spacer(Modifier.height(28.dp))
         }
