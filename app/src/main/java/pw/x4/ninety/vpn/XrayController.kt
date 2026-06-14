@@ -139,7 +139,7 @@ object XrayController {
             }
             else -> ss.put("security", "none")
         }
-        ss.put("xhttpSettings", JSONObject().apply {
+        val xs = JSONObject().apply {
             put("host", n.hostHeader.ifBlank { n.sni })
             put("path", n.path.ifBlank { "/" })
             put("mode", n.mode.ifBlank { "auto" })
@@ -150,7 +150,17 @@ object XrayController {
                 val ex = JSONObject(n.extra)
                 ex.keys().forEach { put(it, ex.get(it)) }
             }
-        })
+        }
+        // downloadSettings (split-режим xhttp) поднимает ОТДЕЛЬНЫЙ download-канал своим
+        // дайлером — он идёт мимо sockopt.domainStrategy основного outbound'а и резолвит
+        // хост системным Go-резолвером → на Android [::1]:53 → "failed to GET … no such host".
+        // Доказано локально на xray 26.3.27: впрыск sockopt.domainStrategy внутрь
+        // downloadSettings уводит его резолв в app/dns. Чужие sockopt-ключи сохраняем.
+        xs.optJSONObject("downloadSettings")?.let { ds ->
+            val sock = ds.optJSONObject("sockopt") ?: JSONObject().also { ds.put("sockopt", it) }
+            sock.put("domainStrategy", "UseIPv4")
+        }
+        ss.put("xhttpSettings", xs)
         // Резолв адреса самого сервера через встроенный DNS xray, а не Go-резолвер:
         // на Android системный резолвер бьёт в [::1]:53 (его нет) → dial рвётся. dns-блок
         // (queryStrategy) трогает только проксируемые домены; адрес outbound-сервера —

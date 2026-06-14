@@ -19,6 +19,8 @@ object Diag {
     private fun logcatFile(ctx: Context) = File(ctx.filesDir, "logcat.txt")
     /** Лог standalone-xray (XrayController пишет сюда stdout/stderr процесса). */
     fun xrayFile(ctx: Context) = File(ctx.filesDir, "xray.log")
+    /** Сгенерированный конфиг xray — для сверки с десктопом байт-в-байт. */
+    fun xrayConfigFile(ctx: Context) = File(ctx.filesDir, "xray-config.json")
 
     fun xrayLog(ctx: Context): String? {
         val txt = xrayFile(ctx).takeIf { it.exists() }?.readText()?.takeIf { it.isNotBlank() } ?: return null
@@ -135,6 +137,7 @@ object Diag {
         val sb = StringBuilder()
         lastCrash(ctx)?.let { sb.append("== last_crash ==\n").append(it).append("\n\n") }
         logcatFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== logcat snapshot ==\n").append(it.readText()).append("\n\n") }
+        xrayConfigFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== xray-config.json ==\n").append(it.readText()).append("\n\n") }
         xrayFile(ctx).takeIf { it.exists() && it.length() > 0 }?.let { sb.append("== xray.log ==\n").append(it.readText()).append("\n\n") }
         stderrFile(ctx).takeIf { it.exists() }?.let { sb.append("== box stderr ==\n").append(it.readText()).append("\n\n") }
         runFile(ctx).takeIf { it.exists() }?.let { sb.append("== box run (log.output) ==\n").append(it.readText()).append("\n\n") }
@@ -159,5 +162,6 @@ object Diag {
         debugFile(ctx).delete()
         logcatFile(ctx).delete()
         xrayFile(ctx).delete()
+        xrayConfigFile(ctx).delete()
     }
 }
