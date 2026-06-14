@@ -5,6 +5,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -89,6 +90,15 @@ fun Hero(
         animationSpec = infiniteRepeatable(tween(sweepMs, easing = LinearEasing), RepeatMode.Restart),
         label = "sweep",
     )
+    // Хром-блик по маске: медленный диагональный проход. Линейно гоняем 0..1, позицию
+    // уводим далеко за края (±2·ширины) → блик виден лишь при пересечении центра,
+    // между проходами естественная пауза (≈60% цикла маска без блика). Замена webm.
+    val shimmerMs = when (phase) { Phase.Linking -> 3200; else -> 5400 }
+    val shimmer by infinite.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(shimmerMs, easing = LinearEasing), RepeatMode.Restart),
+        label = "shimmer",
+    )
 
     // ── Переходы между состояниями: burst (вспышка), lock (фикс-кольцо secured) ──
     val burst = remember { Animatable(0f) }
@@ -115,6 +125,13 @@ fun Hero(
     val secured = phase == Phase.Secured
     val accent = pack.accent
     val accentBright = pack.accentBright
+
+    // Per-state фильтр маски (порт .hero__mask из app.css: brightness/saturate/contrast
+    // + drop-shadow в secured). Плавный кросс-фейд 500ms как `transition: filter` desktop.
+    val targetBright = when (phase) { Phase.Linking -> 1.05f; Phase.Secured -> 1.08f; else -> 0.92f }
+    val targetSat = when (phase) { Phase.Linking -> 1.10f; Phase.Secured -> 1.05f; else -> 0.92f }
+    val maskBright by animateFloatAsState(targetBright, tween(500, easing = FastOutSlowInEasing), label = "maskBright")
+    val maskSat by animateFloatAsState(targetSat, tween(500, easing = FastOutSlowInEasing), label = "maskSat")
 
     Box(modifier.size(stageSize), contentAlignment = Alignment.Center) {
         // ── Halo: мягкое радиальное свечение с дыханием ──
@@ -232,14 +249,33 @@ fun Hero(
                 ) { rippleKey++; onToggle() },
             contentAlignment = Alignment.Center,
         ) {
-            // лёгкая десатурация в standby, полная насыщенность + accent-вуаль в secured
-            val sat = if (secured) 1.05f else 0.92f
+            // Маска: per-state фильтр + лёгкое дыхание по яркости (±0.03) и масштабу (±1.5%).
+            val breathBright = maskBright + breath * 0.03f
+            val maskScale = 1f + breath * 0.015f
             Image(
                 painter = painterResource(R.drawable.oni_mask),
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = maskScale; scaleY = maskScale },
                 contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(sat) }),
+                colorFilter = ColorFilter.colorMatrix(heroMaskMatrix(breathBright, maskSat, 1.05f)),
+            )
+            // Хром-блик: широкий мягкий диагональный sheen, уезжает за края между проходами.
+            val sweep = lerp(-2.0f, 2.0f, shimmer)
+            val sheen = (if (secured) accentBright else Color.White)
+                .copy(alpha = if (phase == Phase.Linking) 0.16f else if (secured) 0.13f else 0.09f)
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { rotationZ = 22f; translationX = size.width * sweep }
+                    .background(
+                        Brush.horizontalGradient(
+                            0.0f to Color.Transparent,
+                            0.5f to sheen,
+                            1.0f to Color.Transparent,
+                        )
+                    )
             )
             if (secured) {
                 Box(
@@ -277,3 +313,33 @@ private fun DrawScope.drawTicks(center: Offset, radius: Float) {
 }
 
 private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
+
+/**
+ * Фильтр маски как CSS `.hero__mask`: saturation → contrast (вокруг середины) → brightness.
+ * ColorMatrix работает в шкале 0..255, потому offset контраста = 127.5·(1−c).
+ */
+private fun heroMaskMatrix(brightness: Float, saturation: Float, contrast: Float): ColorMatrix {
+    val m = ColorMatrix().apply { setToSaturation(saturation) }
+    val o = 127.5f * (1f - contrast)
+    m.timesAssign(
+        ColorMatrix(
+            floatArrayOf(
+                contrast, 0f, 0f, 0f, o,
+                0f, contrast, 0f, 0f, o,
+                0f, 0f, contrast, 0f, o,
+                0f, 0f, 0f, 1f, 0f,
+            )
+        )
+    )
+    m.timesAssign(
+        ColorMatrix(
+            floatArrayOf(
+                brightness, 0f, 0f, 0f, 0f,
+                0f, brightness, 0f, 0f, 0f,
+                0f, 0f, brightness, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            )
+        )
+    )
+    return m
+}
