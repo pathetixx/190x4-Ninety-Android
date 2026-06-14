@@ -17,8 +17,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="false"
         android:usesCleartextTraffic="true"
-        android:extractNativeLibs="true"
         android:theme="@style/Theme.Ninety">
+        <!-- extractNativeLibs убран (был для exec xray-бинаря с диска; xray выпилен).
+             libbox грузится System.loadLibrary, работает и со сжатыми .so → APK легче. -->
+        <!-- (атрибут опущен = дефолт AGP: useLegacyPackaging=false, libs сжаты в APK) -->
 
         <activity
             android:name=".MainActivity"
