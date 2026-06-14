@@ -42,10 +42,6 @@ object ConfigBuilder {
         // outbound-tag, и ядро падает на дубликате.
         val uniq = nodes.distinctBy { it.id }
 
-        // xhttp-ноды идут через локальный xray: вместо родного outbound — socks-мост на
-        // порт, который xray слушает (XrayController поднимает xray на тех же портах).
-        val xrayPort = xrayBridges(uniq).associate { it.node.id to it.port }
-
         val nodeOutbounds = JSONArray()
         val nodeTags = ArrayList<String>()
         var selectedTag: String? = null
@@ -53,8 +49,8 @@ object ConfigBuilder {
             val tag = tagOf(n)
             nodeTags.add(tag)
             if (n.id == selectedId) selectedTag = tag
-            val bridgePort = xrayPort[n.id]
-            nodeOutbounds.put(if (bridgePort != null) socksOutbound(tag, bridgePort) else outbound(n, tag, opts))
+            // xhttp теперь нативный outbound форка (см. transport()), как обычный vless
+            nodeOutbounds.put(outbound(n, tag, opts))
         }
         val validSelected = selectedTag?.takeIf { nodeTags.contains(it) }
 
@@ -359,7 +355,76 @@ object ConfigBuilder {
                 n.hostHeader.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { put(it) }
             })
         }
+        // xhttp НАТИВНО в форке hiddify-sing-box (transport/v2rayxhttp есть всегда, без
+        // build-тега; тот же форк, что у hiddify-app, где эти ноды работают). extra={...}
+        // из ссылки — в Xray-схеме; переводим в схему форка (downloadSettings: address→
+        // server, realitySettings→tls.reality). Раньше уводили в standalone-xray по
+        // ошибочному выводу «форк xhttp не тянет» — тянет, если транслировать extra.
+        "xhttp" -> JSONObject().apply {
+            put("type", "xhttp")
+            if (n.path.isNotEmpty()) put("path", n.path)
+            if (n.hostHeader.isNotEmpty()) put("host", n.hostHeader)
+            if (n.mode.isNotEmpty()) put("mode", n.mode)
+            if (n.extra.isNotBlank()) runCatching {
+                mergeXhttpExtra(this, JSONObject(n.extra))
+            }
+            // форк падает на пустом mode ("mode is not set") → дефолт auto
+            if (optString("mode").isEmpty()) put("mode", "auto")
+        }
         else -> null
+    }
+
+    // xhttp base-ключи с одинаковыми именами в Xray и форке sing-box.
+    private val XHTTP_PASS_KEYS = listOf(
+        "host", "path", "headers", "xPaddingBytes", "noGRPCHeader", "noSSEHeader",
+        "scMaxEachPostBytes", "scMinPostsIntervalMs", "scMaxBufferedPosts",
+        "scStreamUpServerSecs", "xmux",
+    )
+
+    /** Мерж Xray-extra в xhttp-транспорт форка: только whitelisted-ключи (unknown field
+     *  роняет ВЕСЬ конфиг) + трансляция downloadSettings. Порт desktop singbox.js. */
+    private fun mergeXhttpExtra(t: JSONObject, ex: JSONObject) {
+        for (k in XHTTP_PASS_KEYS) if (ex.has(k)) t.put(k, ex.get(k))
+        ex.optString("mode").takeIf { it.isNotEmpty() }?.let { t.put("mode", it) }
+        ex.optJSONObject("downloadSettings")?.let { ds ->
+            xrayDownloadToSingbox(ds)?.let { t.put("downloadSettings", it) }
+        }
+    }
+
+    /** Xray downloadSettings (StreamSettings) → V2RayXHTTPDownloadOptions форка:
+     *  address→server, port→server_port, xhttpSettings.* → плоские base-поля, tls. */
+    private fun xrayDownloadToSingbox(ds: JSONObject): JSONObject? {
+        val d = JSONObject()
+        ds.optString("address").takeIf { it.isNotEmpty() }?.let { d.put("server", it) }
+        if (ds.has("port")) d.put("server_port", ds.optInt("port"))
+        val xs = ds.optJSONObject("xhttpSettings") ?: JSONObject()
+        for (k in XHTTP_PASS_KEYS) if (xs.has(k)) d.put(k, xs.get(k))
+        // под-опции download часто вложены в xhttpSettings.extra (как в ссылке) — тоже мержим
+        xs.optJSONObject("extra")?.let { dex -> for (k in XHTTP_PASS_KEYS) if (dex.has(k)) d.put(k, dex.get(k)) }
+        xrayTlsToSingbox(ds)?.let { d.put("tls", it) }
+        return if (d.length() > 0) d else null
+    }
+
+    /** Xray tlsSettings/realitySettings → OutboundTLSOptions форка. */
+    private fun xrayTlsToSingbox(ds: JSONObject): JSONObject? {
+        val sec = ds.optString("security")
+        if (sec != "tls" && sec != "reality") return null
+        val ts = ds.optJSONObject("tlsSettings") ?: ds.optJSONObject("realitySettings") ?: JSONObject()
+        return JSONObject().apply {
+            put("enabled", true)
+            ts.optString("serverName").takeIf { it.isNotEmpty() }?.let { put("server_name", it) }
+            put("utls", JSONObject().put("enabled", true).put("fingerprint", ts.optString("fingerprint").ifBlank { "chrome" }))
+            when (val alpn = ts.opt("alpn")) {
+                is JSONArray -> if (alpn.length() > 0) put("alpn", alpn)
+                is String -> if (alpn.isNotEmpty()) put("alpn", alpnArr(alpn))
+            }
+            if (ts.optBoolean("allowInsecure") || ts.optBoolean("insecure")) put("insecure", true)
+            if (sec == "reality") put("reality", JSONObject().apply {
+                put("enabled", true)
+                put("public_key", ts.optString("publicKey").ifBlank { ts.optString("public_key") })
+                put("short_id", ts.optString("shortId").ifBlank { ts.optString("short_id") })
+            })
+        }
     }
 
     private fun alpnArr(alpn: String) = JSONArray().apply {
@@ -374,22 +439,14 @@ object ConfigBuilder {
 
     fun tagOfId(id: String): String = "n$id"
 
-    // ── xray-мост для xhttp ──────────────────────────────────────
-    // xhttp форк sing-box не тянет → нода поднимается в standalone-xray (отдельный
-    // процесс, см. XrayController), а sing-box ходит к ней обычным socks-outbound на
-    // локальный порт. Порты раздаёт xrayBridges (тот же расчёт зовёт XrayController,
-    // вход — один и тот же список supported-нод → порты совпадают).
+    // ── xray-мост для xhttp (ОТКЛЮЧЁН) ───────────────────────────
+    // xhttp теперь строится нативным outbound форка hiddify-sing-box (transport=xhttp,
+    // см. transport()), как у hiddify-app — standalone-xray больше не нужен. Возвращаем
+    // пустой список: XrayController.start при пустых мостах гасит xray и выходит, build()
+    // строит все ноды нативно. Код XrayController оставлен на случай отката.
     const val XRAY_BASE_PORT = 31100
 
     data class XrayBridge(val node: Node, val tag: String, val port: Int)
 
-    fun xrayBridges(nodes: List<Node>): List<XrayBridge> =
-        nodes.distinctBy { it.id }.filter { it.isXhttp }
-            .mapIndexed { i, n -> XrayBridge(n, tagOf(n), XRAY_BASE_PORT + i) }
-
-    /** sing-box socks-outbound → локальный xray (127.0.0.1:port). */
-    private fun socksOutbound(tag: String, port: Int) = JSONObject().apply {
-        put("type", "socks"); put("tag", tag)
-        put("server", "127.0.0.1"); put("server_port", port); put("version", "5")
-    }
+    fun xrayBridges(nodes: List<Node>): List<XrayBridge> = emptyList()
 }
