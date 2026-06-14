@@ -239,11 +239,19 @@ object ConfigBuilder {
         return JSONObject().apply { put("type", "udp"); put("server", s) }
     }
 
-    // monitoring (IP-гео всех нод) намеренно НЕ включаем: на старте поднимал десятки
-    // соединений через каждую ноду = шторм и батарея.
     private fun experimental() = JSONObject().apply {
         put("cache_file", JSONObject().apply { put("enabled", true); put("store_rdrc", true) })
         put("unified_delay", JSONObject().put("enabled", true))
+        // OutboundMonitoring (IP-гео всех нод) форк создаёт БЕЗУСЛОВНО в box.go — флага
+        // «выключить» нет, не шлёшь ключ → крутятся агрессивные дефолты (10 воркеров,
+        // повтор каждые 5 мин). Стартовый цикл (startCycleOnce) неизбежен, но прижимаем
+        // частоту и concurrency: меньше одновременных хендшейков = меньше батарея/шторм.
+        // cache_file кэширует IP-гео → повторные старты не перепингивают. idle_timeout
+        // (дефолт 10 мин) и так гасит монитор, когда UI закрыт.
+        put("monitoring", JSONObject().apply {
+            put("interval", "15m")   // было 5m
+            put("workers", 3)        // было 10 — гнём бурст в ~3 раза
+        })
     }
 
     // ── outbound по протоколу ──────────────────────────────────

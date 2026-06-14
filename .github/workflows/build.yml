@@ -18,6 +18,10 @@ env:
   HSB_TAG: v1.13.0.h5
   HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
   NDK_VERSION: 28.0.13004108
+  # Node20 deprecated на раннерах (форс Node24 с июня 2026). checkout@v5 уже на node24;
+  # остальные actions (setup-go/java/gradle/upload-artifact/gh-release) ещё просят node20
+  # в action.yml — этот флаг гонит их на node24 сейчас, валидируя совместимость до форса.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -25,7 +29,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
