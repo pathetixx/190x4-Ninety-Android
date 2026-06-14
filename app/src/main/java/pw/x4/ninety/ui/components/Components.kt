@@ -21,7 +21,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -30,6 +36,37 @@ import pw.x4.ninety.ui.theme.KickerStyle
 import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
+
+/**
+ * Премиум-поверхность карточки — порт `.sub-card`/`.loc-card`/`.prof-card` desktop:
+ * clip → фон ink-1 → обводка line-2 → верхний hairline-градиент (CSS `::before`:
+ * 1px `transparent → white .08 → white .08 → transparent`). Главная «дорогая» деталь
+ * карточек Ninety; держать единым модификатором для консистентности всех экранов.
+ */
+fun Modifier.premiumCard(shape: Shape = RoundedCornerShape(14.dp)): Modifier = this
+    .clip(shape)
+    .background(Ink.Ink1)
+    .border(1.dp, Ink.Line2, shape)
+    .topHairline()
+
+/**
+ * Верхний hairline-градиент (CSS `::before`: 1px `transparent → white .08 → transparent`).
+ * Вешать ПОСЛЕ собственных `background`/`border` карточки (для active-состояний с
+ * accent-фоном); требует `clip(shape)` выше по цепочке, иначе линия вылезет за скругление.
+ */
+fun Modifier.topHairline(): Modifier = this.drawWithContent {
+    drawContent()
+    drawRect(
+        brush = Brush.horizontalGradient(
+            0.0f to Color.Transparent,
+            0.3f to Color.White.copy(alpha = 0.08f),
+            0.7f to Color.White.copy(alpha = 0.08f),
+            1.0f to Color.Transparent,
+        ),
+        topLeft = Offset.Zero,
+        size = Size(size.width, 1.dp.toPx()),
+    )
+}
 
 /** Uppercase-кикер из tokens.css (.kicker). */
 @Composable

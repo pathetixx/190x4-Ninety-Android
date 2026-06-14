@@ -40,6 +40,7 @@ import pw.x4.ninety.data.Profile
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.Hero
 import pw.x4.ninety.ui.components.IconTile
+import pw.x4.ninety.ui.components.premiumCard
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
@@ -193,10 +194,9 @@ private fun ProfileTile(onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .background(Ink.Ink1, RoundedCornerShape(14.dp))
-            .border(1.dp, Ink.Line2, RoundedCornerShape(14.dp))
+            .premiumCard()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconTile(NinetyIcons.Globe)
@@ -261,10 +261,9 @@ private fun LocationTile(onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .background(Ink.Ink1, RoundedCornerShape(14.dp))
-            .border(1.dp, Ink.Line2, RoundedCornerShape(14.dp))
+            .premiumCard()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(

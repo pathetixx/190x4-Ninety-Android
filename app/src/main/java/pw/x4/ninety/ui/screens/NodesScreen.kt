@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +43,7 @@ import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.PingPill
 import pw.x4.ninety.ui.components.ScreenHeader
+import pw.x4.ninety.ui.components.topHairline
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.MonoStyle
@@ -193,8 +195,10 @@ private fun AutoRow(
     Row(
         Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
             .background(if (selected) pack.accentSoft else Ink.Ink1, RoundedCornerShape(14.dp))
             .border(1.dp, if (selected) pack.accent else Ink.Line2, RoundedCornerShape(14.dp))
+            .topHairline()
             .clickable { onClick() }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -225,8 +229,10 @@ private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Un
     Row(
         Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
             .background(if (selected) pack.accentSoft else Ink.Ink1, RoundedCornerShape(14.dp))
             .border(1.dp, if (selected) pack.accent else Ink.Line2, RoundedCornerShape(14.dp))
+            .topHairline()
             .clickable { onClick() }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -46,6 +46,7 @@ import pw.x4.ninety.data.Profile
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.IconTile
 import pw.x4.ninety.ui.components.PillButton
+import pw.x4.ninety.ui.components.topHairline
 import pw.x4.ninety.ui.components.ScreenHeader
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.theme.Ink
@@ -140,8 +141,10 @@ private fun ProfileCard(profile: Profile, active: Boolean, onSelect: () -> Unit,
     Column(
         Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .background(if (active) pack.accentSoft else Ink.Ink1, RoundedCornerShape(16.dp))
             .border(1.dp, if (active) pack.accent else Ink.Line2, RoundedCornerShape(16.dp))
+            .topHairline()
             .clickable { onSelect() }
             .padding(14.dp),
     ) {
