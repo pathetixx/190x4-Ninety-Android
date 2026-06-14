@@ -59,6 +59,7 @@ import pw.x4.ninety.ui.components.PillButton
 import pw.x4.ninety.ui.components.SectionHeader
 import pw.x4.ninety.ui.components.SurfaceCard
 import pw.x4.ninety.ui.components.ToggleRow
+import pw.x4.ninety.ui.components.topHairline
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.icons.SettingsIcons
 import pw.x4.ninety.ui.theme.Ink
@@ -498,7 +499,7 @@ private fun SettingsBanner(text: String) {
 @Composable
 private fun SetRow(label: String, hint: String?, control: @Composable () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 9.dp),
+        Modifier.fillMaxWidth().topHairline().padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {

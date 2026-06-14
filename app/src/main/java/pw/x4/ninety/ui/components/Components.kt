@@ -194,8 +194,9 @@ fun ToggleRow(label: String, checked: Boolean, sub: String? = null, onToggle: (B
     Row(
         Modifier
             .fillMaxWidth()
+            .topHairline()
             .clickable { onToggle(!checked) }
-            .padding(vertical = 8.dp),
+            .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
