@@ -6,6 +6,10 @@ import org.json.JSONObject
 import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Node
 import java.io.File
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Локальный xray для xhttp-нод — standalone-бинарь в ОТДЕЛЬНОМ процессе (как xray.exe
@@ -60,8 +64,30 @@ object XrayController {
 
     fun isRunning(): Boolean = try { proc?.isAlive == true } catch (_: Throwable) { false }
 
+    // ── пре-резолв хостов в IP ───────────────────────────────────
+    // Go-резолвер ВНУТРИ xray-бинаря на Android бьёт в [::1]:53 (нет resolv.conf) и
+    // sockopt.domainStrategy его НЕ перебивает в http2-дайлере download-канала xhttp
+    // (проверено на железе: downloadSettings всё равно резолвит [::1]:53). Поэтому
+    // резолвим хост сами — системным резолвером Android (для Java-кода он работает) —
+    // и подставляем IP в address ДАЙЛА, оставляя hostname в SNI/Host. Тогда xray
+    // никакой DNS не делает. Не зарезолвилось — отдаём host как есть (фолбэк на dns-блок).
+    private val ipCache = HashMap<String, String>()
+    private fun dialAddr(host: String): String {
+        if (host.isBlank() || host.contains(':') || host.all { it.isDigit() || it == '.' }) return host
+        ipCache[host]?.let { return it }
+        val pool = Executors.newSingleThreadExecutor()
+        val ip = runCatching {
+            pool.submit<String?> {
+                InetAddress.getAllByName(host).firstOrNull { it is Inet4Address }?.hostAddress
+            }.get(4, TimeUnit.SECONDS)
+        }.getOrNull()
+        pool.shutdownNow()
+        return (ip ?: host).also { ipCache[host] = it }
+    }
+
     // ── конфиг xray ──────────────────────────────────────────────
     private fun buildConfig(bridges: List<ConfigBuilder.XrayBridge>): String {
+        ipCache.clear()  // свежий резолв на каждую сессию — IP могли смениться
         val inbounds = JSONArray()
         val outbounds = JSONArray()
         val rules = JSONArray()
@@ -98,7 +124,7 @@ object XrayController {
         JSONObject().apply {
             put("tag", tag); put("protocol", "trojan")
             put("settings", JSONObject().put("servers", JSONArray().put(JSONObject().apply {
-                put("address", n.host); put("port", n.port); put("password", n.password)
+                put("address", dialAddr(n.host)); put("port", n.port); put("password", n.password)
             })))
             put("streamSettings", xrayStream(n))
         }
@@ -110,7 +136,7 @@ object XrayController {
                 if (n.flow.isNotEmpty()) put("flow", n.flow)
             }
             put("settings", JSONObject().put("vnext", JSONArray().put(JSONObject().apply {
-                put("address", n.host); put("port", n.port)
+                put("address", dialAddr(n.host)); put("port", n.port)
                 put("users", JSONArray().put(user))
             })))
             put("streamSettings", xrayStream(n))
@@ -152,13 +178,11 @@ object XrayController {
             }
         }
         // downloadSettings (split-режим xhttp) поднимает ОТДЕЛЬНЫЙ download-канал своим
-        // дайлером — он идёт мимо sockopt.domainStrategy основного outbound'а и резолвит
-        // хост системным Go-резолвером → на Android [::1]:53 → "failed to GET … no such host".
-        // Доказано локально на xray 26.3.27: впрыск sockopt.domainStrategy внутрь
-        // downloadSettings уводит его резолв в app/dns. Чужие sockopt-ключи сохраняем.
+        // http2-дайлером — он резолвит хост Go-резолвером даже при sockopt.domainStrategy
+        // (на железе всё равно бил в [::1]:53). Поэтому подставляем IP в его address тоже,
+        // как и в основной. serverName/host внутри остаются хостнеймом (SNI/Host).
         xs.optJSONObject("downloadSettings")?.let { ds ->
-            val sock = ds.optJSONObject("sockopt") ?: JSONObject().also { ds.put("sockopt", it) }
-            sock.put("domainStrategy", "UseIPv4")
+            ds.optString("address").takeIf { it.isNotBlank() }?.let { ds.put("address", dialAddr(it)) }
         }
         ss.put("xhttpSettings", xs)
         // Резолв адреса самого сервера через встроенный DNS xray, а не Go-резолвер:
