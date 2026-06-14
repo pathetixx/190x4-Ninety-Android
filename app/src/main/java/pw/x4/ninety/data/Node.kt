@@ -30,6 +30,7 @@ data class Node(
     val hostHeader: String = "",
     val serviceName: String = "",
     val mode: String = "",
+    val extra: String = "",        // сырой JSON из ссылки (?extra=) — xhttp-подопции для xray
     val upMbps: Int = 0,
     val downMbps: Int = 0,
     val obfs: String = "",

@@ -64,6 +64,7 @@ object LinkParser {
             hostHeader = q["host"] ?: "",
             serviceName = q["serviceName"] ?: "",
             mode = q["mode"] ?: "",
+            extra = q["extra"] ?: "",
             raw = s,
         )
     }
@@ -85,6 +86,8 @@ object LinkParser {
             path = q["path"] ?: "",
             hostHeader = q["host"] ?: "",
             serviceName = q["serviceName"] ?: "",
+            mode = q["mode"] ?: "",
+            extra = q["extra"] ?: "",
             raw = s,
         )
     }

@@ -143,6 +143,13 @@ object XrayController {
             put("host", n.hostHeader.ifBlank { n.sni })
             put("path", n.path.ifBlank { "/" })
             put("mode", n.mode.ifBlank { "auto" })
+            // extra={...} из ссылки — xhttp-подопции в Xray-схеме (downloadSettings,
+            // xmux, xPaddingBytes, noGRPCHeader, headers…). Подмешиваем сырьём, как
+            // десктоп (singbox.js Object.assign): без них сервер не отвечает → urltest timeout.
+            if (n.extra.isNotBlank()) runCatching {
+                val ex = JSONObject(n.extra)
+                ex.keys().forEach { put(it, ex.get(it)) }
+            }
         })
         // Резолв адреса самого сервера через встроенный DNS xray, а не Go-резолвер:
         // на Android системный резолвер бьёт в [::1]:53 (его нет) → dial рвётся. dns-блок
