@@ -142,6 +142,15 @@ object Diag {
         return sb.toString().ifBlank { "(пусто)" }
     }
 
+    /** Сохраняет fullReport в cacheDir как txt-файл (для шаринга через FileProvider) и
+     *  возвращает его. Имя с датой-временем — несколько отчётов не перетирают друг друга. */
+    fun writeReportFile(ctx: Context): File {
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(Date())
+        val f = File(ctx.cacheDir, "ninety-diag-$stamp.txt")
+        f.writeText(fullReport(ctx))
+        return f
+    }
+
     fun clear(ctx: Context) {
         crashFile(ctx).delete()
         stderrFile(ctx).delete()

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -352,6 +353,9 @@ private fun LogsSection(context: Context) {
                 Text("СКОПИРОВАТЬ", style = MonoStyle, color = NinetyState.pack.accent,
                     modifier = Modifier.clickable { copyDiag(context) })
                 Spacer(Modifier.width(16.dp))
+                Text("ФАЙЛ", style = MonoStyle, color = NinetyState.pack.accent,
+                    modifier = Modifier.clickable { shareDiag(context) })
+                Spacer(Modifier.width(16.dp))
                 Text("ОЧИСТИТЬ", style = MonoStyle, color = Ink.TextLo,
                     modifier = Modifier.clickable { Diag.clear(context); refresh++ })
             }
@@ -671,4 +675,22 @@ private fun copyDiag(context: Context) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("ninety-diag", Diag.fullReport(context)))
     Toast.makeText(context, "Диагностика скопирована", Toast.LENGTH_SHORT).show()
+}
+
+private fun shareDiag(context: Context) {
+    runCatching {
+        val file = Diag.writeReportFile(context)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(
+            Intent.createChooser(send, "Сохранить логи").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }.onFailure {
+        Toast.makeText(context, "Не удалось сохранить логи", Toast.LENGTH_SHORT).show()
+    }
 }

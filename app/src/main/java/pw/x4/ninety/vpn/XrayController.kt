@@ -144,6 +144,11 @@ object XrayController {
             put("path", n.path.ifBlank { "/" })
             put("mode", n.mode.ifBlank { "auto" })
         })
+        // Резолв адреса самого сервера через встроенный DNS xray, а не Go-резолвер:
+        // на Android системный резолвер бьёт в [::1]:53 (его нет) → dial рвётся. dns-блок
+        // (queryStrategy) трогает только проксируемые домены; адрес outbound-сервера —
+        // только sockopt.domainStrategy. UseIPv4 — IPv6 на телефоне часто отсутствует.
+        ss.put("sockopt", JSONObject().put("domainStrategy", "UseIPv4"))
         return ss
     }
 }
