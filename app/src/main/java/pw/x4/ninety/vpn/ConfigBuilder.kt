@@ -243,14 +243,15 @@ object ConfigBuilder {
         put("cache_file", JSONObject().apply { put("enabled", true); put("store_rdrc", true) })
         put("unified_delay", JSONObject().put("enabled", true))
         // OutboundMonitoring (IP-гео всех нод) форк создаёт БЕЗУСЛОВНО в box.go — флага
-        // «выключить» нет, не шлёшь ключ → крутятся агрессивные дефолты (10 воркеров,
-        // повтор каждые 5 мин). Стартовый цикл (startCycleOnce) неизбежен, но прижимаем
-        // частоту и concurrency: меньше одновременных хендшейков = меньше батарея/шторм.
-        // cache_file кэширует IP-гео → повторные старты не перепингивают. idle_timeout
-        // (дефолт 10 мин) и так гасит монитор, когда UI закрыт.
+        // «выключить» нет, не шлёшь ключ → крутятся грубые дефолты (5 мин). Стартовый
+        // цикл (startCycleOnce) неизбежен, но прижимаем частоту и быстро гасим монитор,
+        // когда UI закрыт. ⚠️ Поля строго по эталону desktop singbox.js (форк 1.13.0.h5):
+        // urls/interval/debounce_window/idle_timeout. Поля `workers` в форке НЕТ —
+        // строгий парсер роняет ВЕСЬ конфиг на неизвестном ключе (была регрессия v0.1.19,
+        // отсекала xhttp вместе со всеми нодами). cache_file кэширует IP-гео.
         put("monitoring", JSONObject().apply {
-            put("interval", "15m")   // было 5m
-            put("workers", 3)        // было 10 — гнём бурст в ~3 раза
+            put("interval", "15m")          // было 5m
+            put("idle_timeout", "45s")      // быстро гасим монитор, когда нет UI-подписчиков (батарея)
         })
     }
 
