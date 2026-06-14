@@ -58,6 +58,7 @@ data class Node(
         put("security", security); put("type", type); put("flow", flow); put("sni", sni)
         put("fp", fp); put("pbk", pbk); put("sid", sid); put("alpn", alpn); put("path", path)
         put("hostHeader", hostHeader); put("serviceName", serviceName); put("mode", mode)
+        put("extra", extra)  // xhttp под-опции (download/xmux/паддинги) — без персиста xhttp ломался после рестарта
         put("upMbps", upMbps); put("downMbps", downMbps); put("obfs", obfs); put("obfsPassword", obfsPassword)
         put("congestion", congestion); put("udpRelay", udpRelay); put("insecure", insecure)
         put("zeroRtt", zeroRtt); put("raw", raw); put("fromSub", fromSub); put("subId", subId)
@@ -86,6 +87,7 @@ data class Node(
             hostHeader = o.optString("hostHeader"),
             serviceName = o.optString("serviceName"),
             mode = o.optString("mode"),
+            extra = o.optString("extra"),
             upMbps = o.optInt("upMbps"),
             downMbps = o.optInt("downMbps"),
             obfs = o.optString("obfs"),
