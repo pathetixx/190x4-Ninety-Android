@@ -4,8 +4,10 @@ import android.content.Context
 import org.json.JSONArray
 import pw.x4.ninety.data.persistence.LegacyStorageInput
 import pw.x4.ninety.data.persistence.PreferenceSnapshot
+import pw.x4.ninety.data.persistence.RollbackJournal
 import pw.x4.ninety.data.persistence.StorageSnapshot
 import java.io.File
+import java.net.URI
 
 /** Reads the old files without modifying them. Room migration owns the commit and verification. */
 internal object LegacySnapshotReader {
@@ -13,22 +15,41 @@ internal object LegacySnapshotReader {
         val app = context.applicationContext
         val nodesFile = File(app.filesDir, NODES_FILE)
         val profilesFile = File(app.filesDir, PROFILES_FILE)
+        val journalFile = File(app.filesDir, JOURNAL_FILE)
         val preferencesFile = File(app.applicationInfo.dataDir, "shared_prefs/$PREFS_FILE.xml")
         val preferences = app.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
         val legacySubscriptionUrl = preferences.getString(KEY_SUB_URL, null)
 
-        val rawNodes = readNodes(nodesFile)
-        val parsedProfiles = readProfiles(profilesFile)
-        val (nodes, profiles) = if (parsedProfiles != null) {
-            repairCurrentGraph(rawNodes, parsedProfiles)
-        } else {
-            migrateFlatGraph(rawNodes, legacySubscriptionUrl)
+        val nodesText = readText(nodesFile)
+        val profilesText = readText(profilesFile)
+        val journalText = readText(journalFile)
+        val rawNodes = parseNodes(nodesText)
+        val rawProfiles = parseProfiles(profilesText)
+
+        val filesReadable = nodesText.valid && profilesText.valid
+        val payloadsParsable = rawNodes != null && (!profilesFile.exists() || rawProfiles != null)
+        val journalValid = when {
+            !journalFile.exists() -> true // pre-Room legacy installation
+            !journalText.valid || nodesText.content == null || profilesText.content == null -> false
+            else -> RollbackJournal.validates(
+                manifest = journalText.content,
+                nodesJson = nodesText.content,
+                profilesJson = profilesText.content,
+            )
+        }
+        val graphPresent = (nodesFile.exists() || profilesFile.exists()) &&
+            filesReadable && payloadsParsable && journalValid
+
+        val (nodes, profiles) = when {
+            !graphPresent -> emptyList<Node>() to emptyList()
+            profilesFile.exists() -> repairCurrentGraph(rawNodes.orEmpty(), rawProfiles.orEmpty())
+            else -> migrateFlatGraph(rawNodes.orEmpty(), legacySubscriptionUrl)
         }
 
         return LegacyStorageInput(
             snapshot = StorageSnapshot(
-                nodes = nodes.map(Node::toPersistedNode),
-                profiles = profiles.map(Profile::toPersistedProfile),
+                nodes = nodes.map { it.toPersistedNode() },
+                profiles = profiles.map { it.toPersistedProfile() },
                 preferences = PreferenceSnapshot(
                     themePack = preferences.getString(KEY_THEME, "kurogane") ?: "kurogane",
                     autoUpdateCheck = preferences.getBoolean(KEY_AUTO_UPDATE, true),
@@ -41,24 +62,34 @@ internal object LegacySnapshotReader {
                     optionsJson = preferences.getString(KEY_OPTIONS_JSON, null),
                 ),
             ).normalized(),
-            graphPresent = nodesFile.exists() || profilesFile.exists(),
+            graphPresent = graphPresent,
             preferencesPresent = preferencesFile.exists(),
         )
     }
 
-    private fun readNodes(file: File): List<Node> {
-        if (!file.exists()) return emptyList()
-        return runCatching {
-            val array = JSONArray(file.readText())
-            (0 until array.length()).map { Node.fromJson(array.getJSONObject(it)) }
-        }.getOrElse { emptyList() }
+    private fun readText(file: File): FileText {
+        if (!file.exists()) return FileText(valid = true, content = null)
+        return runCatching { file.readText() }
+            .fold(
+                onSuccess = { FileText(valid = true, content = it) },
+                onFailure = { FileText(valid = false, content = null) },
+            )
     }
 
-    /** null means missing/corrupt and triggers the v0.1 flat-list migration path. */
-    private fun readProfiles(file: File): List<Profile>? {
-        if (!file.exists()) return null
+    private fun parseNodes(file: FileText): List<Node>? {
+        if (!file.valid) return null
+        val text = file.content ?: return emptyList()
         return runCatching {
-            val array = JSONArray(file.readText())
+            val array = JSONArray(text)
+            (0 until array.length()).map { Node.fromJson(array.getJSONObject(it)) }
+        }.getOrNull()
+    }
+
+    private fun parseProfiles(file: FileText): List<Profile>? {
+        if (!file.valid) return null
+        val text = file.content ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(text)
             (0 until array.length()).map { Profile.fromJson(array.getJSONObject(it)) }
         }.getOrNull()
     }
@@ -101,7 +132,7 @@ internal object LegacySnapshotReader {
         val nodes = mutableListOf<Node>()
         val profiles = mutableListOf<Profile>()
 
-        val subscriptionNodes = oldNodes.filter(Node::fromSub)
+        val subscriptionNodes = oldNodes.filter { it.fromSub }
         if (subscriptionNodes.isNotEmpty()) {
             val url = legacySubscriptionUrl.orEmpty()
             val profileId = if (url.isBlank()) "sub:raw:legacy" else Profile.subId(url)
@@ -115,7 +146,7 @@ internal object LegacySnapshotReader {
             subscriptionNodes.forEach { nodes += it.copy(subId = profileId) }
         }
 
-        oldNodes.filterNot(Node::fromSub).forEach { node ->
+        oldNodes.filterNot { it.fromSub }.forEach { node ->
             val profileId = "single:${node.id}"
             if (profiles.none { it.id == profileId }) {
                 profiles += Profile(
@@ -132,13 +163,19 @@ internal object LegacySnapshotReader {
 
     private fun hostOf(url: String): String? = runCatching {
         url.takeIf(String::isNotBlank)
-            ?.let(::java.net.URI)
+            ?.let { URI(it) }
             ?.host
             ?.removePrefix("www.")
     }.getOrNull()
 
+    private data class FileText(
+        val valid: Boolean,
+        val content: String?,
+    )
+
     private const val NODES_FILE = "nodes.json"
     private const val PROFILES_FILE = "profiles.json"
+    private const val JOURNAL_FILE = "storage-journal.v1"
     private const val PREFS_FILE = "ninety"
     private const val KEY_THEME = "theme_pack"
     private const val KEY_AUTO_UPDATE = "auto_update_check"
