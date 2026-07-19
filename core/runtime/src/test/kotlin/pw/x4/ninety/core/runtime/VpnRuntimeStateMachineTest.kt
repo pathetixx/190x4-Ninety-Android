@@ -1,5 +1,8 @@
 package pw.x4.ninety.core.runtime
 
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -70,5 +73,29 @@ class VpnRuntimeStateMachineTest {
         assertEquals(VpnRuntimePhase.Connected, machine.snapshot().phase)
         assertEquals("fresh", machine.snapshot().activeServer)
         assertNull(machine.snapshot().lastError)
+    }
+
+    @Test
+    fun `concurrent requests publish generations in commit order`() {
+        val workers = 32
+        val published = Collections.synchronizedList(mutableListOf<Long>())
+        val machine = VpnRuntimeStateMachine { state -> published += state.generation }
+        val ready = CountDownLatch(workers)
+        val release = CountDownLatch(1)
+
+        val threads = List(workers) { index ->
+            thread(start = true, name = "runtime-request-$index") {
+                ready.countDown()
+                release.await()
+                machine.request(VpnRuntimeCommand.Stop("stop-$index"))
+            }
+        }
+        ready.await()
+        release.countDown()
+        threads.forEach(Thread::join)
+
+        assertEquals((1L..workers.toLong()).toList(), published)
+        assertEquals(workers.toLong(), machine.snapshot().generation)
+        assertEquals(VpnRuntimePhase.Stopping, machine.snapshot().phase)
     }
 }
