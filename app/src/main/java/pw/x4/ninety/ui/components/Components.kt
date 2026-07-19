@@ -34,25 +34,23 @@ import androidx.compose.ui.unit.dp
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
 import pw.x4.ninety.ui.theme.MonoStyle
+import pw.x4.ninety.ui.theme.NinetyRadius
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
 
 /**
  * Премиум-поверхность карточки — порт `.sub-card`/`.loc-card`/`.prof-card` desktop:
- * clip → фон ink-1 → обводка line-2 → верхний hairline-градиент (CSS `::before`:
- * 1px `transparent → white .08 → white .08 → transparent`). Главная «дорогая» деталь
- * карточек Ninety; держать единым модификатором для консистентности всех экранов.
+ * clip → фон ink-1 → обводка line-2 → верхний hairline-градиент.
  */
-fun Modifier.premiumCard(shape: Shape = RoundedCornerShape(14.dp)): Modifier = this
+fun Modifier.premiumCard(shape: Shape = RoundedCornerShape(NinetyRadius.md)): Modifier = this
     .clip(shape)
     .background(Ink.Ink1)
     .border(1.dp, Ink.Line2, shape)
-    .topHairline()
+    .topHairline(alpha = if (NinetyState.pack.palette.isLight) 0.42f else 0.08f)
 
 /**
- * Верхний hairline-градиент (CSS `::before`: 1px `transparent → white .08 → transparent`).
- * Вешать ПОСЛЕ собственных `background`/`border` карточки (для active-состояний с
- * accent-фоном); требует `clip(shape)` выше по цепочке, иначе линия вылезет за скругление.
+ * Верхний hairline-градиент (CSS `::before`: 1px `transparent → white → transparent`).
+ * Вешать после background/border; clip должен быть выше по цепочке.
  */
 fun Modifier.topHairline(color: Color = Color.White, alpha: Float = 0.08f): Modifier = this.drawWithContent {
     drawContent()
@@ -79,7 +77,7 @@ fun Kicker(text: String, modifier: Modifier = Modifier, accent: Boolean = false)
     )
 }
 
-/** Заголовок экрана: kicker (mono, разреженный) + крупный title + опц. подзаголовок. */
+/** Заголовок экрана: kicker + крупный title + опциональный подзаголовок. */
 @Composable
 fun ScreenHeader(
     kicker: String,
@@ -111,11 +109,12 @@ fun ScreenHeader(
 @Composable
 fun IconTile(icon: ImageVector, size: Int = 38, accent: Boolean = false) {
     val pack = NinetyState.pack
+    val shape = RoundedCornerShape(NinetyRadius.sm)
     Box(
         Modifier
             .size(size.dp)
-            .background(if (accent) pack.accentSoft else Ink.Ink2, RoundedCornerShape(10.dp))
-            .border(1.dp, if (accent) Color.Transparent else Ink.Line1, RoundedCornerShape(10.dp)),
+            .background(if (accent) pack.accentSoft else Ink.Ink2, shape)
+            .border(1.dp, if (accent) Color.Transparent else Ink.Line1, shape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, tint = if (accent) pack.accentBright else Ink.TextMid, modifier = Modifier.size((size * 0.42f).dp))
@@ -132,42 +131,46 @@ fun SectionHeader(icon: ImageVector, label: String) {
     }
 }
 
-/** Карточка-поверхность (ink-2 + тонкая обводка line-2), радиус r-lg. */
+/** Карточка-поверхность (ink-2 + line-2 + desktop edge highlight), радиус r-lg. */
 @Composable
 fun SurfaceCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val shape = RoundedCornerShape(NinetyRadius.lg)
     Column(
         modifier
             .fillMaxWidth()
-            .background(Ink.Ink2, RoundedCornerShape(18.dp))
-            .border(1.dp, Ink.Line2, RoundedCornerShape(18.dp))
+            .clip(shape)
+            .background(Ink.Ink2, shape)
+            .border(1.dp, Ink.Line2, shape)
+            .topHairline(alpha = if (NinetyState.pack.palette.isLight) 0.42f else 0.08f)
             .padding(16.dp)
     ) {
         content()
     }
 }
 
-/** Пилюля-кнопка действия (стиль «ДОБАВИТЬ ИЗ БУФЕРА»: accent-обводка + soft-фон). */
+/** Пилюля-кнопка действия: accent-обводка + soft-фон. */
 @Composable
 fun PillButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     val pack = NinetyState.pack
+    val shape = RoundedCornerShape(NinetyRadius.xs)
     Text(
         AnnotatedString(text.uppercase()),
         style = MonoStyle,
         color = if (enabled) pack.accent else Ink.TextLo,
         modifier = modifier
-            .background(if (enabled) pack.accentSoft else Ink.Ink3, RoundedCornerShape(8.dp))
-            .border(1.dp, if (enabled) pack.accent else Ink.Line2, RoundedCornerShape(8.dp))
+            .background(if (enabled) pack.accentSoft else Ink.Ink3, shape)
+            .border(1.dp, if (enabled) pack.accent else Ink.Line2, shape)
             .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 12.dp, vertical = 8.dp),
     )
 }
 
 /**
- * Пилюля пинга ноды (грейд по задержке, как .prox__ping на desktop). null/0/>=65000
- * = недоступна → «—». Цвета: <800 зелёный, <1500 янтарь, иначе красный.
+ * Пилюля пинга ноды. null/0/>=65000 = недоступна → «—».
+ * Цвета: <800 зелёный, <1500 янтарь, иначе красный.
  */
 @Composable
 fun PingPill(ms: Int?, modifier: Modifier = Modifier) {
@@ -194,7 +197,7 @@ fun ToggleRow(label: String, checked: Boolean, sub: String? = null, onToggle: (B
     Row(
         Modifier
             .fillMaxWidth()
-            .topHairline()
+            .topHairline(alpha = if (pack.palette.isLight) 0.24f else 0.08f)
             .clickable { onToggle(!checked) }
             .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -214,7 +217,7 @@ fun ToggleRow(label: String, checked: Boolean, sub: String? = null, onToggle: (B
             Box(
                 Modifier
                     .size(20.dp)
-                    .background(Ink.TextHi, CircleShape)
+                    .background(if (checked) pack.palette.ink0 else Ink.TextHi, CircleShape)
             )
         }
     }
