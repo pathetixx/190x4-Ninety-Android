@@ -271,6 +271,10 @@ object ConfigBuilder {
             }
             "shadowsocks" -> {
                 o.put("type", "shadowsocks"); o.put("method", n.method); o.put("password", n.password)
+                if (n.plugin.isNotEmpty()) {
+                    o.put("plugin", n.plugin)
+                    if (n.pluginOpts.isNotEmpty()) o.put("plugin_opts", n.pluginOpts)
+                }
             }
             "hysteria2" -> {
                 o.put("type", "hysteria2"); o.put("password", n.password)
@@ -344,7 +348,9 @@ object ConfigBuilder {
         put("enabled", true)
         put("server_name", n.sni.ifBlank { n.host })
         put("insecure", n.insecure)
+        if (n.disableSni) put("disable_sni", true)
         put("alpn", alpnArr(n.alpn.ifBlank { "h3" }))
+        if (n.pinSHA256.isNotEmpty()) put("certificate_public_key_sha256", n.pinSHA256)
     }
 
     private fun transport(n: Node): JSONObject? = when (n.type) {
