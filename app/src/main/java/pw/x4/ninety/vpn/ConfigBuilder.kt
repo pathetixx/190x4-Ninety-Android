@@ -25,7 +25,7 @@ object ConfigBuilder {
         logPath: String? = null,
         opts: Options.Data = Options.data,
     ): String = SingBoxConfigBuilder.build(
-        nodes = nodes.map(Node::toConfigNode),
+        nodes = nodes.map { it.toConfigNode() },
         selection = ProxySelection.fromPersisted(selectedId),
         logPath = logPath,
         options = opts.toCoreOptions(),
