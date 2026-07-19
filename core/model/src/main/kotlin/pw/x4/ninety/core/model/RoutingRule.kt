@@ -135,6 +135,7 @@ object RoutingRuleSanitizer {
 
     fun normalizePackage(raw: String): String? {
         val value = raw.trim().removePrefix("package:")
+        if (value.endsWith(".exe", ignoreCase = true)) return null
         return value.takeIf(packageRegex::matches)
     }
 
@@ -149,8 +150,8 @@ object RoutingRuleSanitizer {
     private fun validIpv4(value: String): Boolean {
         val match = ipv4Regex.matchEntire(value) ?: return false
         return match.groupValues.drop(1).all { octet ->
-            val number = octet.toIntOrNull() ?: return@all false
-            number in 0..255 && number.toString() == octet.trimStart('0').ifEmpty { "0" }
+            if (octet.length > 1 && octet.startsWith('0')) return@all false
+            octet.toIntOrNull()?.let { it in 0..255 } == true
         }
     }
 
