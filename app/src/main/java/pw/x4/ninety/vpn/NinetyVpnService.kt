@@ -103,11 +103,13 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     override fun onDestroy() {
         destroyed = true
-        val ticket = VpnController.requestStop(null)
         runtimeExecutor.shutdownNow()
         closeEngineResources()
         Diag.stopRunLog()
-        VpnController.completeStopped(ticket)
+        if (VpnController.snapshot.value.state != ConnState.Idle) {
+            val ticket = VpnController.requestStop(null)
+            VpnController.completeStopped(ticket)
+        }
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         super.onDestroy()
     }
@@ -124,8 +126,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     } catch (error: Throwable) {
         val message = "Не удалось запустить службу: ${error.message}"
         Diag.writeCrash(this, "startForeground", error)
-        VpnController.fail(ticket, message)
-        stopSelf()
+        if (VpnController.fail(ticket, message)) stopSelf()
         false
     }
 
@@ -172,16 +173,17 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             Libbox.checkConfig(config)
             if (!VpnController.isCurrent(ticket)) return
 
-            localServer = Libbox.newCommandServer(this, this)
+            val server = Libbox.newCommandServer(this, this)
+            localServer = server
             synchronized(resourceLock) {
-                inFlightServer = localServer
-                commandServer = localServer
+                inFlightServer = server
+                commandServer = server
             }
-            localServer.start()
+            server.start()
             if (!VpnController.isCurrent(ticket)) return
 
             // options must be non-null: libbox dereferences it in command_server.go.
-            localServer.startOrReloadService(config, OverrideOptions())
+            server.startOrReloadService(config, OverrideOptions())
             if (!VpnController.isCurrent(ticket)) return
 
             synchronized(resourceLock) { inFlightServer = null }
@@ -195,10 +197,11 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             val message = error.message ?: "Ошибка запуска туннеля"
             if (VpnController.fail(ticket, message)) finishFailedRuntime()
         } finally {
-            localServer?.let { closeSpecificServer(it) }
+            val unfinished = localServer
+            unfinished?.let(::closeSpecificServer)
             synchronized(resourceLock) {
-                if (inFlightServer === localServer) inFlightServer = null
-                if (commandServer === localServer) commandServer = null
+                if (inFlightServer === unfinished) inFlightServer = null
+                if (commandServer === unfinished) commandServer = null
             }
             if (!VpnController.isCurrent(ticket)) {
                 closeEngineResources()
@@ -254,28 +257,34 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun closeEngineResources() {
-        val servers: List<CommandServer>
-        val callback: ConnectivityManager.NetworkCallback?
-        val descriptor: ParcelFileDescriptor?
-        synchronized(resourceLock) {
-            servers = listOfNotNull(inFlightServer, commandServer).distinct()
+        val resources = synchronized(resourceLock) {
+            val captured = EngineResources(
+                servers = listOfNotNull(inFlightServer, commandServer).distinct(),
+                callback = networkCallback,
+                descriptor = pfd,
+            )
             inFlightServer = null
             commandServer = null
-            callback = networkCallback
             networkCallback = null
             monitorListener = null
-            descriptor = pfd
             pfd = null
+            captured
         }
-        servers.forEach(::closeSpecificServer)
-        callback?.let { runCatching { cm.unregisterNetworkCallback(it) } }
-        runCatching { descriptor?.close() }
+        resources.servers.forEach(::closeSpecificServer)
+        resources.callback?.let { runCatching { cm.unregisterNetworkCallback(it) } }
+        runCatching { resources.descriptor?.close() }
     }
 
     private fun closeSpecificServer(server: CommandServer) {
         runCatching { server.closeService() }
         runCatching { server.close() }
     }
+
+    private data class EngineResources(
+        val servers: List<CommandServer>,
+        val callback: ConnectivityManager.NetworkCallback?,
+        val descriptor: ParcelFileDescriptor?,
+    )
 
     // ── PlatformInterface ──────────────────────────────────────
     override fun openTun(options: TunOptions): Int {
@@ -399,11 +408,15 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     // ── CommandServerHandler ───────────────────────────────────
     override fun serviceStop() {
-        enqueue(VpnController.requestStop(null))
+        if (VpnController.snapshot.value.state == ConnState.Connected) {
+            enqueue(VpnController.requestStop(null))
+        }
     }
 
     override fun serviceReload() {
-        VpnController.requestReload()?.let(::enqueue)
+        if (VpnController.snapshot.value.state == ConnState.Connected) {
+            VpnController.requestReload()?.let(::enqueue)
+        }
     }
 
     override fun getSystemProxyStatus(): SystemProxyStatus =
