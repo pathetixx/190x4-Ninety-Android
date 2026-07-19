@@ -24,6 +24,9 @@
 :core:config
   deterministic sing-box JSON builder
 
+:core:runtime
+  VPN commands, phases, generation-safe transitions
+
 :data
   Room, DataStore, migrations, encrypted secrets
 
@@ -39,6 +42,7 @@
 ```text
 app -> data -> core:model
 app -> core:parser -> core:model
+app -> core:runtime
 app -> vpn:libbox -> core:config -> core:model
 core:config tests -> core:parser test fixtures
 ```
@@ -108,6 +112,32 @@ Rollback journal состоит из atomic JSON-файлов и checksum-ман
 
 Полный протокол описан в `docs/DATA_MIGRATION.md`.
 
+## Реализованный runtime boundary
+
+`:core:runtime` владеет командами `Start`, `Reload`, `Stop`, фазами lifecycle и монотонным generation token. Completion или failure принимается только от актуального ticket; более новая команда немедленно делает старую долгую операцию stale.
+
+Android `NinetyVpnService` выполняет platform effects одной FIFO-очередью:
+
+```text
+request command + advance generation
+              ↓
+single runtime executor
+              ↓
+libbox / TUN / notification / cleanup
+```
+
+Это гарантирует:
+
+- поздний start не может вернуть `Connected` после stop;
+- смена ноды/профиля во время `Starting` применяет последний config;
+- повторные stop идемпотентны;
+- stale failure не останавливает новый запуск;
+- `CommandServer`, TUN fd и network callback закрываются через одну resource boundary.
+
+`VpnController` публикует `StateFlow<VpnSnapshot>`. Для существующих Compose-экранов временно сохранён совместимый state mirror; source of truth остаётся StateFlow.
+
+Полный контракт и device smoke-test описаны в `docs/RUNTIME_STATE_MACHINE.md`.
+
 ## Platform capabilities
 
 UI и config builder обязаны принимать `PlatformCapabilities`, а не проверять платформу строками или скрытыми условиями.
@@ -123,20 +153,6 @@ Android:
 - Naive/TrustTunnel sidecars: пока нет;
 - WARP: отдельный этап.
 
-## VPN lifecycle
-
-Текущие ручные `Thread` должны быть заменены одним сериализованным actor/command queue:
-
-```text
-Start(selection)
-Stop(reason)
-Reload(selection/options revision)
-NetworkChanged(network)
-PermissionRevoked
-```
-
-Одновременно выполняется только одна команда. Каждая долгая операция получает generation token; устаревший результат не может изменить новое состояние.
-
 ## Проверки до merge
 
 Минимальный gate:
@@ -145,12 +161,13 @@ PermissionRevoked
 :core:model:test
 :core:parser:test
 :core:config:test
+:core:runtime:test
 :data:testDebugUnitTest
 :app:lintDebug
 :app:assembleDebug
 ```
 
-Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback.
+Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback. Для runtime обязательны тесты stale completion/failure и реальный smoke-test start/stop/reload/revoke.
 
 ## Этапы
 
@@ -158,6 +175,6 @@ PermissionRevoked
 2. ✅ Parser: нормализованные DTO, Android adapter и fixtures desktop/Android.
 3. ✅ Config: pure Kotlin builder, typed options, shared fixtures и golden JSON.
 4. ✅ Data: Room/DataStore, encrypted secrets, verified legacy migration и rollback journal.
-5. Следующий — Runtime: сериализованный VPN lifecycle и StateFlow.
-6. UI: responsive desktop design language в Compose.
+5. ✅ Runtime: сериализованная command queue, generation safety и `StateFlow`.
+6. Следующий — UI: responsive desktop design language в Compose.
 7. Advanced: custom routing, quality engine, WARP.
