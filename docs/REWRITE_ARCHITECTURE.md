@@ -34,7 +34,7 @@
   VpnService, PlatformInterface, CommandServer/Client
 
 :app
-  Compose, ViewModel, navigation, Android intents
+  Compose, adaptive shell, navigation, Android intents
 ```
 
 ## Правила зависимостей
@@ -138,6 +138,20 @@ libbox / TUN / notification / cleanup
 
 Полный контракт и device smoke-test описаны в `docs/RUNTIME_STATE_MACHINE.md`.
 
+## Реализованный UI boundary
+
+Compose использует единый `NinetyLayoutMetrics` и три класса окна:
+
+- Compact `< 600 dp`: bottom navigation и одна колонка;
+- Medium `600–1099 dp`: navigation rail и adaptive grids;
+- Expanded `>= 1100 dp`: desktop-like sidebar, двухколоночная Главная и master-detail Настройки.
+
+Adaptive shell владеет safe-drawing insets и навигацией. Главная, Профили, Ноды и Настройки принимают один layout contract, но используют те же `Store`, `Options`, `VpnController`, `ClashMonitor` и `NinetyVpnService`; бизнес-логика не дублируется по размерам окна.
+
+Профили и Ноды используют responsive `LazyVerticalGrid`. Auto/urltest занимает полную строку. Expanded Главная размещает hero слева, а профиль, активную ноду и live-сессию справа. Expanded Настройки используют master-detail, Compact/Medium — drill-down.
+
+Старый отдельный мобильный Settings screen удалён. Полный breakpoint-контракт и real-device smoke matrix описаны в `docs/RESPONSIVE_UI.md`.
+
 ## Platform capabilities
 
 UI и config builder обязаны принимать `PlatformCapabilities`, а не проверять платформу строками или скрытыми условиями.
@@ -167,7 +181,7 @@ Android:
 :app:assembleDebug
 ```
 
-Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback. Для runtime обязательны тесты stale completion/failure и реальный smoke-test start/stop/reload/revoke.
+Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback. Для runtime обязательны тесты stale completion/failure и реальный smoke-test start/stop/reload/revoke. Для UI обязательна проверка Compact/Medium/Expanded, font scale, тёмной/светлой темы и реальных VPN/import/diagnostics сценариев.
 
 ## Этапы
 
@@ -176,5 +190,5 @@ Android:
 3. ✅ Config: pure Kotlin builder, typed options, shared fixtures и golden JSON.
 4. ✅ Data: Room/DataStore, encrypted secrets, verified legacy migration и rollback journal.
 5. ✅ Runtime: сериализованная command queue, generation safety и `StateFlow`.
-6. Следующий — UI: responsive desktop design language в Compose.
-7. Advanced: custom routing, quality engine, WARP.
+6. ✅ UI: responsive shell, Главная, Профили, Ноды и master-detail Настройки.
+7. Следующий — Advanced: custom routing, quality engine и WARP.
