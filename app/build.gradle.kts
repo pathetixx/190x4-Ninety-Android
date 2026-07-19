@@ -20,6 +20,7 @@ android {
         versionCode = 129
         versionName = "0.1.29"
 
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // ABI задаёт splits.abi ниже (abiFilters и splits взаимоисключающи).
     }
 
@@ -77,15 +78,18 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
     lint {
-        // не валим release-сборку на lint-предупреждениях (lintVitalRelease)
-        abortOnError = false
+        // Debug/PR lint обязан проходить. Release lintVital временно не блокирует
+        // сборку libbox, пока не будет подготовлен полный baseline для gomobile API.
+        abortOnError = true
         checkReleaseBuilds = false
     }
 }
 
 dependencies {
+    implementation(project(":core:model"))
+
     // Ядро VPN — libbox.aar (gomobile bind hiddify-sing-box), кладётся CI в app/libs/.
-    // fileTree пустой локально (.gitignore) — milestone 1 код его не импортирует.
+    // fileTree пустой локально (.gitignore) — pure Kotlin/Compose тесты не требуют ядра.
     implementation(fileTree("libs") { include("*.aar") })
 
     implementation("androidx.core:core-ktx:1.13.1")
@@ -104,4 +108,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    testImplementation(kotlin("test-junit5"))
 }
