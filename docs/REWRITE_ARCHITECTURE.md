@@ -16,7 +16,7 @@
 
 ```text
 :core:model
-  ProxyNode/Profile/Selection/Options/Capabilities
+  ProxyNode/Profile/Selection/Options/Capabilities/RoutingRule
 
 :core:parser
   share links + subscription normalization
@@ -152,6 +152,25 @@ Adaptive shell владеет safe-drawing insets и навигацией. Гл�
 
 Старый отдельный мобильный Settings screen удалён. Полный breakpoint-контракт и real-device smoke matrix описаны в `docs/RESPONSIVE_UI.md`.
 
+## Реализованный custom routing boundary
+
+`core:model` владеет типизированными `RoutingRule`, `RoutingRuleType`, `DomainMatch`, `RoutingRuleAction` и единым sanitizer. UI, persistence и config builder не обмениваются произвольным sing-box JSON.
+
+Поддерживаются:
+
+- domain suffix/exact/keyword;
+- IPv4/IPv6 address и CIDR;
+- Android `package_name`;
+- desktop-only `process_name`;
+- действия proxy/direct/block;
+- enable/disable и явный порядок приоритета.
+
+`NinetyConfigBuilder` вставляет пользовательские правила после `sniff`/`hijack-dns`, но перед LAN, region и ad-block rules. Неподдерживаемые платформой, отключённые и пустые правила не попадают в config.
+
+На Android 10+ `NinetyVpnService` использует `ConnectivityManager.getConnectionOwnerUid()` и заполняет libbox `ConnectionOwner.androidPackageName`. Для shared UID приоритет имеет пакет, явно присутствующий в активном правиле. Android 8/9 используют procfs fallback; package rules на этих версиях не добавляются в config.
+
+Редактор находится в `Настройки → Маршрутизация`, сохраняет правила через существующий `Options` DataStore path и поддерживает add/edit/delete, reorder и toggle. Полный контракт и smoke matrix описаны в `docs/CUSTOM_ROUTING.md`.
+
 ## Platform capabilities
 
 UI и config builder обязаны принимать `PlatformCapabilities`, а не проверять платформу строками или скрытыми условиями.
@@ -159,7 +178,8 @@ UI и config builder обязаны принимать `PlatformCapabilities`, �
 Android:
 
 - TUN: да;
-- per-app routing: да;
+- per-app routing: Android 10+ через connection owner API;
+- domain/IP custom routing: да;
 - Always-on/lockdown: через систему Android;
 - system proxy: нет;
 - WFP kill switch: нет;
@@ -181,7 +201,7 @@ Android:
 :app:assembleDebug
 ```
 
-Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback. Для runtime обязательны тесты stale completion/failure и реальный smoke-test start/stop/reload/revoke. Для UI обязательна проверка Compact/Medium/Expanded, font scale, тёмной/светлой темы и реальных VPN/import/diagnostics сценариев.
+Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback. Для runtime обязательны тесты stale completion/failure и реальный smoke-test start/stop/reload/revoke. Для UI обязательна проверка Compact/Medium/Expanded, font scale, тёмной/светлой темы и реальных VPN/import/diagnostics сценариев. Для custom routing обязательны device-проверки первого совпадения, domain/IP actions, package routing Android 10+, persistence и reload активного туннеля.
 
 ## Этапы
 
@@ -191,4 +211,6 @@ Android:
 4. ✅ Data: Room/DataStore, encrypted secrets, verified legacy migration и rollback journal.
 5. ✅ Runtime: сериализованная command queue, generation safety и `StateFlow`.
 6. ✅ UI: responsive shell, Главная, Профили, Ноды и master-detail Настройки.
-7. Следующий — Advanced: custom routing, quality engine и WARP.
+7. ✅ Advanced / Custom routing: typed rules, sanitizer, editor, deterministic config и Android package owner.
+8. Следующий — Advanced / Quality engine: health scoring и устойчивый Auto.
+9. Затем — Advanced / WARP integration.
