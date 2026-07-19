@@ -111,10 +111,17 @@ data class StorageSnapshot(
     }
 }
 
+/** Whether JSON files exist matters: an existing `[]` is a valid post-clear rollback journal. */
+data class LegacyStorageInput(
+    val snapshot: StorageSnapshot,
+    val graphPresent: Boolean,
+)
+
 enum class StorageSource {
     ROOM,
     LEGACY_IMPORT,
     LEGACY_RECOVERY,
+    LEGACY_FALLBACK,
     EMPTY,
 }
 
