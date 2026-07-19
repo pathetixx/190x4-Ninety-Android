@@ -111,10 +111,11 @@ data class StorageSnapshot(
     }
 }
 
-/** Whether JSON files exist matters: an existing `[]` is a valid post-clear rollback journal. */
+/** Existing empty JSON/SharedPreferences are valid post-clear rollback journals. */
 data class LegacyStorageInput(
     val snapshot: StorageSnapshot,
     val graphPresent: Boolean,
+    val preferencesPresent: Boolean,
 )
 
 enum class StorageSource {
