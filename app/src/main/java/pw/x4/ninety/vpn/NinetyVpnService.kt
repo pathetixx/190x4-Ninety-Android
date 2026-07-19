@@ -8,7 +8,9 @@ import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.nekohasekai.libbox.CommandServer
@@ -28,6 +30,13 @@ import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import io.nekohasekai.libbox.NetworkInterface as LbNetworkInterface
 import io.nekohasekai.libbox.NetworkInterfaceIterator
+import java.io.File
+import java.net.InetSocketAddress
+import java.net.NetworkInterface as JNetworkInterface
+import java.util.Collections
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import pw.x4.ninety.MainActivity
 import pw.x4.ninety.R
 import pw.x4.ninety.core.runtime.VpnRuntimeCommand
@@ -35,12 +44,6 @@ import pw.x4.ninety.core.runtime.VpnRuntimeTicket
 import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Store
-import java.io.File
-import java.net.NetworkInterface as JNetworkInterface
-import java.util.Collections
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.RejectedExecutionException
 
 /**
  * VpnService + libbox runtime.
@@ -325,7 +328,8 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (!protect(fd)) throw IllegalStateException("protect($fd) failed")
     }
 
-    override fun useProcFS(): Boolean = false
+    /** Android 8/9 use libbox procfs fallback; Android 10+ use the platform owner API below. */
+    override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
 
     override fun findConnectionOwner(
         ipProtocol: Int,
@@ -333,7 +337,24 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         sourcePort: Int,
         destinationAddress: String,
         destinationPort: Int,
-    ): ConnectionOwner = throw UnsupportedOperationException("findConnectionOwner не поддержан")
+    ): ConnectionOwner {
+        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            "package routing requires Android 10 or newer"
+        }
+        val uid = cm.getConnectionOwnerUid(
+            ipProtocol,
+            InetSocketAddress(sourceAddress, sourcePort),
+            InetSocketAddress(destinationAddress, destinationPort),
+        )
+        check(uid != Process.INVALID_UID) { "android: connection owner not found" }
+        val ownerPackage = packageManager.getPackagesForUid(uid)?.firstOrNull().orEmpty()
+        check(ownerPackage.isNotEmpty()) { "android: package for uid $uid not visible" }
+        return ConnectionOwner().apply {
+            setUserId(uid)
+            setUserName(ownerPackage)
+            setAndroidPackageName(ownerPackage)
+        }
+    }
 
     override fun localDNSTransport(): LocalDNSTransport? = null
 
