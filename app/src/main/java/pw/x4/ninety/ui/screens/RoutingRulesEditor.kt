@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -217,9 +218,9 @@ private fun RuleCard(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             CompactAction("↑", enabled = index > 0, onClick = onMoveUp)
             CompactAction("↓", enabled = index < total - 1, onClick = onMoveDown)
-            CompactAction("ИЗМЕНИТЬ", onClick = onEdit)
             Spacer(Modifier.weight(1f))
-            CompactAction("УДАЛИТЬ", danger = true, onClick = onDelete)
+            CompactAction("ИЗМ.", onClick = onEdit)
+            CompactAction("УДАЛ.", danger = true, onClick = onDelete)
         }
     }
 }
@@ -258,7 +259,6 @@ private fun RuleDialog(
     var action by remember(initial.id) { mutableStateOf(initial.action) }
     var valuesText by remember(initial.id) { mutableStateOf(initial.values.joinToString("\n")) }
     var error by remember(initial.id) { mutableStateOf<String?>(null) }
-    var warning by remember(initial.id) { mutableStateOf<String?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -268,7 +268,7 @@ private fun RuleDialog(
             Modifier
                 .padding(horizontal = 18.dp)
                 .fillMaxWidth()
-                .width(560.dp)
+                .widthIn(max = 560.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(Ink.Ink1)
                 .border(1.dp, Ink.Line2, RoundedCornerShape(20.dp))
@@ -295,14 +295,14 @@ private fun RuleDialog(
                     if (initial.type == RoutingRuleType.PROCESS_NAME) add(RoutingRuleType.PROCESS_NAME)
                 },
                 display = ::typeLabel,
-                onValue = { type = it; error = null; warning = null },
+                onValue = { type = it; error = null },
             )
             if (type == RoutingRuleType.DOMAIN) {
                 Spacer(Modifier.height(10.dp))
                 SelectorRow(
                     label = "Совпадение",
                     value = match,
-                    options = DomainMatch.entries,
+                    options = DomainMatch.entries.toList(),
                     display = ::matchLabel,
                     onValue = { match = it },
                 )
@@ -311,7 +311,7 @@ private fun RuleDialog(
             SelectorRow(
                 label = "Действие",
                 value = action,
-                options = RoutingRuleAction.entries,
+                options = RoutingRuleAction.entries.toList(),
                 display = ::actionLabel,
                 onValue = { action = it },
             )
@@ -333,7 +333,7 @@ private fun RuleDialog(
                 }
                 BasicTextField(
                     value = valuesText,
-                    onValueChange = { valuesText = it; error = null; warning = null },
+                    onValueChange = { valuesText = it; error = null },
                     textStyle = MonoStyle.copy(color = Ink.TextHi),
                     cursorBrush = SolidColor(NinetyState.pack.accent),
                     modifier = Modifier.fillMaxWidth(),
@@ -352,10 +352,6 @@ private fun RuleDialog(
                 Spacer(Modifier.height(9.dp))
                 Text(it, style = MonoStyle, color = Ink.Err)
             }
-            warning?.let {
-                Spacer(Modifier.height(9.dp))
-                Text(it, style = MonoStyle, color = Ink.Warn)
-            }
 
             Spacer(Modifier.height(17.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -367,7 +363,7 @@ private fun RuleDialog(
                         (type != RoutingRuleType.ANDROID_PACKAGE || packageRoutingSupported),
                 ) {
                     val raw = initial.copy(
-                        enabled = true,
+                        enabled = initial.enabled,
                         type = type,
                         match = match,
                         action = action,
@@ -377,11 +373,6 @@ private fun RuleDialog(
                     if (result.rule.values.isEmpty()) {
                         error = "Нет ни одного валидного значения"
                     } else {
-                        warning = when {
-                            result.dropped > 0 -> "Отброшено невалидных значений: ${result.dropped}"
-                            result.duplicates > 0 -> "Удалено дубликатов: ${result.duplicates}"
-                            else -> null
-                        }
                         onSave(result.rule)
                     }
                 }
