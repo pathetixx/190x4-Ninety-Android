@@ -104,21 +104,25 @@ class ProxyLinkParserTest {
     }
 
     @Test
-    fun `quic aliases and boolean forms stay Android compatible`() {
+    fun `quic aliases and advanced tls fields stay Android compatible`() {
         val hy2 = assertNotNull(
-            ProxyLinkParser.parseLink("hy2://secret@hy.example.com?insecure=true#Alias")
+            ProxyLinkParser.parseLink(
+                "hy2://secret@hy.example.com?insecure=true&pinSHA256=sha256-pin#Alias"
+            )
         )
         val tuic = assertNotNull(
             ProxyLinkParser.parseLink(
-                "tuic://uuid:pass@tuic.example.com?allow_insecure=1&zero_rtt_handshake=1"
+                "tuic://uuid:pass@tuic.example.com?allow_insecure=1&zero_rtt_handshake=1&disable_sni=true"
             )
         )
 
         assertEquals(443, hy2.port)
         assertTrue(hy2.insecure)
+        assertEquals("sha256-pin", hy2.certificatePublicKeySha256)
         assertEquals(443, tuic.port)
         assertTrue(tuic.insecure)
         assertTrue(tuic.zeroRttHandshake)
+        assertTrue(tuic.disableSni)
         assertFalse(ProxyLinkParser.parseSubscription("not base64 and not a link").isNotEmpty())
     }
 
