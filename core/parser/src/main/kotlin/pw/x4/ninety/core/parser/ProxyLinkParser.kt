@@ -232,6 +232,7 @@ object ProxyLinkParser {
             insecure = query["insecure"].toBooleanFlag(),
             obfs = query["obfs"].orEmpty(),
             obfsPassword = query["obfs-password"] ?: query["obfsPassword"].orEmpty(),
+            certificatePublicKeySha256 = query["pinSHA256"].orEmpty(),
             upMbps = query["up"].toPositiveIntOrZero(),
             downMbps = query["down"].toPositiveIntOrZero(),
             raw = url,
@@ -264,6 +265,7 @@ object ProxyLinkParser {
             udpRelayMode = query["udp_relay_mode"] ?: query["udpRelayMode"] ?: "native",
             insecure = query["allow_insecure"].toBooleanFlag(),
             zeroRttHandshake = query["zero_rtt_handshake"].toBooleanFlag(),
+            disableSni = query["disable_sni"].toBooleanFlag(),
             raw = url,
         )
     }
