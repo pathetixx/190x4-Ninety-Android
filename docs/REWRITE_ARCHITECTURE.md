@@ -40,6 +40,7 @@
 app -> data -> core:model
 app -> core:parser -> core:model
 app -> vpn:libbox -> core:config -> core:model
+core:config tests -> core:parser test fixtures
 ```
 
 Core-модули не должны импортировать:
@@ -63,6 +64,31 @@ Parser fixtures повторяют общий desktop-контракт для:
 - Hysteria2 / `hy2`;
 - TUIC;
 - plain и base64 subscription bodies.
+
+## Реализованный config boundary
+
+`core:config` принимает только:
+
+- `ConfigNode(id, ProxyNode)`;
+- типизированный `ProxySelection`;
+- неизменяемый снимок `SingBoxOptions`;
+- опциональный путь лога.
+
+Модуль детерминированно строит sing-box 1.13 JSON и не знает об Android, SharedPreferences, Compose или libbox. Android `ConfigBuilder` сохраняет прежнюю публичную сигнатуру и выполняет только преобразование legacy `Node` / `Options.Data` в core DTO.
+
+Golden tests фиксируют:
+
+- selector + urltest и стабильные outbound tags;
+- VLESS/VMess/Trojan/Shadowsocks/Hysteria2/TUIC;
+- Reality, uTLS, ALPN, WS/gRPC/HTTP/xHTTP;
+- безопасную whitelist-трансляцию xHTTP `downloadSettings`;
+- Shadowsocks plugin, Hysteria2 certificate pin, TUIC `disable_sni`;
+- IPv4/IPv6, DNS, FakeDNS, regional rule sets и ad blocking;
+- TLS fragmentation/tricks и stream multiplex;
+- отсутствие multiplex на QUIC-протоколах;
+- byte-deterministic output и раннюю валидацию некорректных DNS/options.
+
+Подробный контракт описан в `docs/CONFIG_PORT.md`.
 
 ## Platform capabilities
 
@@ -123,8 +149,8 @@ PermissionRevoked
 
 1. ✅ Foundation: `core:model`, capability matrix, design tokens, CI.
 2. ✅ Parser: нормализованные DTO, Android adapter и fixtures desktop/Android.
-3. Следующий — Config: единый контракт и golden JSON.
-4. Data: Room/DataStore + legacy migration.
+3. ✅ Config: pure Kotlin builder, typed options, shared fixtures и golden JSON.
+4. Следующий — Data: Room/DataStore + безопасная legacy migration.
 5. Runtime: сериализованный VPN lifecycle и StateFlow.
 6. UI: responsive desktop design language в Compose.
 7. Advanced: custom routing, quality engine, WARP.
