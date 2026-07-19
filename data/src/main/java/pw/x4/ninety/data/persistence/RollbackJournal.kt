@@ -20,8 +20,8 @@ object RollbackJournal {
 
     fun validates(manifest: String, nodesJson: String, profilesJson: String): Boolean {
         val values = manifest.lineSequence()
-            .map(String::trim)
-            .filter(String::isNotEmpty)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
             .mapNotNull { line ->
                 val separator = line.indexOf('=')
                 if (separator <= 0) null else line.substring(0, separator) to line.substring(separator + 1)
@@ -35,5 +35,5 @@ object RollbackJournal {
     private fun sha256(value: String): String = MessageDigest
         .getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
-        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+        .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
 }
