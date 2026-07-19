@@ -1,0 +1,73 @@
+{
+  "log": {"level": "debug", "timestamp": true, "output": "/tmp/ninety.log"},
+  "dns": {
+    "servers": [
+      {"type": "tls", "server": "2001:db8::53", "server_port": 853, "tag": "dns-remote", "domain_resolver": "dns-direct", "detour": "proxy"},
+      {"type": "udp", "server": "8.8.8.8", "server_port": 53, "tag": "dns-direct"},
+      {"tag": "dns-fake", "type": "fakeip", "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18"}
+    ],
+    "rules": [
+      {"domain_suffix": [".ru"], "server": "dns-direct", "rewrite_ttl": 86400},
+      {"rule_set": ["geosite-ru"], "server": "dns-direct", "rewrite_ttl": 86400},
+      {"query_type": ["A", "AAAA"], "server": "dns-fake"}
+    ],
+    "strategy": "prefer_ipv6",
+    "independent_cache": true,
+    "final": "dns-remote"
+  },
+  "inbounds": [
+    {"type": "tun", "tag": "tun-in", "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"], "mtu": 1500, "auto_route": true, "strict_route": true, "stack": "system"}
+  ],
+  "outbounds": [
+    {"type": "selector", "tag": "proxy", "outbounds": ["auto", "nvless"], "default": "auto", "interrupt_exist_connections": true},
+    {"type": "urltest", "tag": "auto", "outbounds": ["nvless"], "url": "https://example.com/ping", "interval": "30s", "tolerance": 50, "interrupt_exist_connections": false},
+    {
+      "tag": "nvless",
+      "server": "2001:db8::1",
+      "server_port": 443,
+      "type": "vless",
+      "uuid": "11111111-2222-3333-4444-555555555555",
+      "packet_encoding": "xudp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "edge.example.com",
+        "utls": {"enabled": true, "fingerprint": "chrome"},
+        "reality": {"enabled": true, "public_key": "public-key", "short_id": "abcd"},
+        "fragment": true,
+        "fragment_fallback_delay": "300ms",
+        "tls_tricks": {"padding_size": "120-640", "mixedcase_sni": true}
+      },
+      "transport": {"type": "xhttp", "path": "/api", "host": "cdn.example.com", "mode": "auto", "xPaddingBytes": "100-200"},
+      "multiplex": {"enabled": true, "protocol": "smux", "max_streams": 16, "padding": true}
+    },
+    {"type": "direct", "tag": "direct"}
+  ],
+  "route": {
+    "rules": [
+      {"action": "sniff"},
+      {"protocol": "dns", "action": "hijack-dns"},
+      {"domain_suffix": [".ru"], "outbound": "direct"},
+      {"rule_set": ["geosite-ru", "geoip-ru"], "outbound": "direct"},
+      {"rule_set": ["geosite-ads", "geosite-malware", "geosite-phishing", "geosite-cryptominers", "geoip-malware", "geoip-phishing"], "action": "reject"}
+    ],
+    "rule_set": [
+      {"type": "remote", "tag": "geoip-ru", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country/geoip-ru.srs", "update_interval": "120h", "download_detour": "proxy"},
+      {"type": "remote", "tag": "geosite-ru", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country/geosite-ru.srs", "update_interval": "120h", "download_detour": "proxy"},
+      {"type": "remote", "tag": "geosite-ads", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-category-ads-all.srs", "update_interval": "120h", "download_detour": "proxy"},
+      {"type": "remote", "tag": "geosite-malware", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-malware.srs", "update_interval": "120h", "download_detour": "proxy"},
+      {"type": "remote", "tag": "geosite-phishing", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-phishing.srs", "update_interval": "120h", "download_detour": "proxy"},
+      {"type": "remote", "tag": "geosite-cryptominers", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-cryptominers.srs", "update_interval": "120h", "download_detour": "proxy"},
+      {"type": "remote", "tag": "geoip-malware", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geoip-malware.srs", "update_interval": "120h", "download_detour": "proxy"},
+      {"type": "remote", "tag": "geoip-phishing", "format": "binary", "url": "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geoip-phishing.srs", "update_interval": "120h", "download_detour": "proxy"}
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true,
+    "default_domain_resolver": {"server": "dns-direct"}
+  },
+  "experimental": {
+    "cache_file": {"enabled": true, "store_rdrc": true},
+    "unified_delay": {"enabled": true},
+    "monitoring": {"interval": "15m", "idle_timeout": "45s"}
+  }
+}
