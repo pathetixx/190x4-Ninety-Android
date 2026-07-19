@@ -43,9 +43,13 @@ private fun ProxyNode.toNode(): Node = Node(
     downMbps = downMbps,
     obfs = obfs,
     obfsPassword = obfsPassword,
+    pinSHA256 = certificatePublicKeySha256,
     congestion = congestionControl,
     udpRelay = udpRelayMode,
     insecure = insecure,
     zeroRtt = zeroRttHandshake,
+    disableSni = disableSni,
+    plugin = plugin,
+    pluginOpts = pluginOptions,
     raw = raw,
 )
