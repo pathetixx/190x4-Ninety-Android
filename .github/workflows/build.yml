@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  # Suffix isolates the new split-job pipeline from cancelled legacy runs.
+  # Suffix isolates the split-job pipeline from cancelled legacy runs.
   group: ${{ github.workflow }}-${{ github.ref }}-split-jobs
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -43,11 +43,11 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Model and parser tests
+      - name: Model, parser and config tests
         shell: bash
         run: |
           set -o pipefail
-          gradle :core:model:test :core:parser:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
+          gradle :core:model:test :core:parser:test :core:config:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
 
       - name: Upload PR core diagnostics
         if: always() && github.event_name == 'pull_request'
@@ -59,6 +59,7 @@ jobs:
             ci-core-tests.log
             core/model/build/reports/tests/**
             core/parser/build/reports/tests/**
+            core/config/build/reports/tests/**
 
   android:
     name: android build
