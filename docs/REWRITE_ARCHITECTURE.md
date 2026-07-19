@@ -16,7 +16,7 @@
 
 ```text
 :core:model
-  Node/Profile/Selection/Options/Capabilities
+  ProxyNode/Profile/Selection/Options/Capabilities
 
 :core:parser
   share links + subscription normalization
@@ -38,8 +38,8 @@
 
 ```text
 app -> data -> core:model
+app -> core:parser -> core:model
 app -> vpn:libbox -> core:config -> core:model
-core:parser -> core:model
 ```
 
 Core-модули не должны импортировать:
@@ -49,6 +49,20 @@ Core-модули не должны импортировать:
 - `io.nekohasekai.libbox`;
 - конкретное хранилище;
 - UI-строки.
+
+## Реализованный parser boundary
+
+`core:model` владеет нормализованными `ProxyNode` и `ProxyProtocol`. `core:parser` принимает share-link или subscription body и возвращает эти модели. Текущий Android `LinkParser` остаётся тонким compatibility adapter в legacy `Node`, поэтому `Store`, импорт и refresh не требуют рискованного одновременного переписывания.
+
+Parser fixtures повторяют общий desktop-контракт для:
+
+- VLESS, включая Reality, IPv6 и xHTTP `extra`;
+- VMess base64 JSON;
+- Trojan;
+- Shadowsocks SIP002 и plugin metadata;
+- Hysteria2 / `hy2`;
+- TUIC;
+- plain и base64 subscription bodies.
 
 ## Platform capabilities
 
@@ -103,13 +117,13 @@ PermissionRevoked
 :app:assembleDebug
 ```
 
-Для config builder обязательны golden tests на тех же fixtures, что используются desktop-Ninety.
+Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety.
 
 ## Этапы
 
-1. Foundation: `core:model`, capability matrix, design tokens, CI.
-2. Parser: нормализованные DTO и fixtures desktop/Android.
-3. Config: единый контракт и golden JSON.
+1. ✅ Foundation: `core:model`, capability matrix, design tokens, CI.
+2. ✅ Parser: нормализованные DTO, Android adapter и fixtures desktop/Android.
+3. Следующий — Config: единый контракт и golden JSON.
 4. Data: Room/DataStore + legacy migration.
 5. Runtime: сериализованный VPN lifecycle и StateFlow.
 6. UI: responsive desktop design language в Compose.
