@@ -63,12 +63,12 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    /** Автоподключение к последней ноде при холодном старте. Тихо — только если
+    /** Автоподключение к последнему выбору при холодном старте. Тихо — только если
      *  согласие на VPN уже выдано (prepare==null); диалог consent не навязываем. */
     private fun maybeAutoConnect() {
         if (Prefs.get(this).autoConnect &&
             !VpnController.isActive &&
-            Store.activeNode() != null &&
+            Store.hasRunnableSelection() &&
             VpnService.prepare(this) == null
         ) startVpn()
     }
@@ -78,8 +78,8 @@ class MainActivity : ComponentActivity() {
             NinetyVpnService.stop(this)
             return
         }
-        if (Store.activeNode() == null) {
-            Toast.makeText(this, "Сначала добавьте и выберите узел во вкладке «Узлы»", Toast.LENGTH_LONG).show()
+        if (!Store.hasRunnableSelection()) {
+            Toast.makeText(this, "Сначала добавьте профиль и выберите узел или режим «Авто»", Toast.LENGTH_LONG).show()
             return
         }
         val prepare = VpnService.prepare(this)
@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVpn() {
-        if (Store.activeNode() == null) return
+        if (!Store.hasRunnableSelection()) return
         NinetyVpnService.start(this)
     }
 
