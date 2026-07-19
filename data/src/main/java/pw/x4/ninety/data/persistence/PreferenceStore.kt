@@ -3,12 +3,12 @@ package pw.x4.ninety.data.persistence
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +65,10 @@ internal class PreferenceStore(
         setNullable(OPTIONS_JSON, snapshot.optionsJson)
     }
 
-    private fun <T> MutablePreferences.setNullable(key: Preferences.Key<T>, value: T?) {
+    private fun <T : Any> MutablePreferences.setNullable(
+        key: Preferences.Key<T>,
+        value: T?,
+    ) {
         if (value == null) remove(key) else this[key] = value
     }
 
