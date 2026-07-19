@@ -72,8 +72,8 @@ object SingBoxConfigBuilder {
                 put("type", "selector")
                 put("tag", "proxy")
                 put("outbounds", buildJsonArray {
-                    add("auto")
-                    nodeTags.forEach(::add)
+                    add(JsonPrimitive("auto"))
+                    nodeTags.forEach { add(JsonPrimitive(it)) }
                 })
                 put("default", selectedTag ?: "auto")
                 put("interrupt_exist_connections", true)
@@ -120,8 +120,10 @@ object SingBoxConfigBuilder {
         put("type", "tun")
         put("tag", "tun-in")
         put("address", buildJsonArray {
-            add("172.19.0.1/30")
-            if (options.ipv6Mode != Ipv6Mode.DISABLE) add("fdfe:dcba:9876::1/126")
+            add(JsonPrimitive("172.19.0.1/30"))
+            if (options.ipv6Mode != Ipv6Mode.DISABLE) {
+                add(JsonPrimitive("fdfe:dcba:9876::1/126"))
+            }
         })
         put("mtu", options.mtu)
         put("auto_route", true)
@@ -207,7 +209,7 @@ object SingBoxConfigBuilder {
 
         if (options.blockAds) {
             rules += buildJsonObject {
-                put("rule_set", stringArray(blockAdSets.map(Pair<String, String>::first)))
+                put("rule_set", stringArray(blockAdSets.map { it.first }))
                 put("action", "reject")
             }
         }
@@ -434,7 +436,7 @@ object SingBoxConfigBuilder {
             xhttpPassKeys.forEach { key -> nested[key]?.let { values[key] = it } }
         }
         xrayTlsToSingBox(settings)?.let { values["tls"] = it }
-        return values.takeIf(Map<String, JsonElement>::isNotEmpty)?.let(::JsonObject)
+        return if (values.isEmpty()) null else JsonObject(values)
     }
 
     private fun xrayTlsToSingBox(settings: JsonObject): JsonObject? {
@@ -490,10 +492,11 @@ object SingBoxConfigBuilder {
             "https" -> {
                 val uri = runCatching { URI(value) }
                     .getOrElse { throw IllegalArgumentException("invalid DoH URL: $value", it) }
-                require(uri.userInfo == null && !uri.host.isNullOrBlank()) { "invalid DoH URL: $value" }
+                val host = uri.host?.removeSurrounding("[", "]")
+                require(uri.userInfo == null && !host.isNullOrBlank()) { "invalid DoH URL: $value" }
                 buildJsonObject {
                     put("type", "https")
-                    put("server", uri.host.removeSurrounding("[", "]"))
+                    put("server", host)
                     if (uri.port >= 0) put("server_port", uri.port)
                     val path = uri.rawPath.orEmpty()
                     if (path.isNotEmpty() && path != "/") put("path", path)
@@ -556,7 +559,7 @@ object SingBoxConfigBuilder {
     )
 
     private fun stringArray(values: Iterable<String>): JsonArray = buildJsonArray {
-        values.forEach(::add)
+        values.forEach { add(JsonPrimitive(it)) }
     }
 
     private fun withFields(base: JsonObject, append: JsonObjectBuilder.() -> Unit): JsonObject = buildJsonObject {
