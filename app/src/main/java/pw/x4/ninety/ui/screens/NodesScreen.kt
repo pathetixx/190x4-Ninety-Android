@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.item
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -100,7 +99,7 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
                                 val effective = nodeByTag(nodes, snapshot.autoNow)
                                 AutoCard(
                                     selected = Store.isAutoActive,
-                                    effectiveName = effective?.name?.ifBlank { effective.host },
+                                    effectiveName = effective?.let { it.name.ifBlank { it.host } },
                                     ping = snapshot.autoNow?.let { snapshot.delays[it] },
                                     onClick = { select(context, Store.AUTO_ID) },
                                 )
