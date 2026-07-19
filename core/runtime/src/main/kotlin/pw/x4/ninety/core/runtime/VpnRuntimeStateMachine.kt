@@ -50,23 +50,19 @@ class VpnRuntimeStateMachine(
                 VpnRuntimeCommand.Start -> when (state.phase) {
                     VpnRuntimePhase.Starting,
                     VpnRuntimePhase.Connected,
-                    VpnRuntimePhase.Reloading,
-                    -> return null
+                    VpnRuntimePhase.Reloading -> return null
 
                     VpnRuntimePhase.Idle,
-                    VpnRuntimePhase.Stopping,
-                    -> VpnRuntimePhase.Starting
+                    VpnRuntimePhase.Stopping -> VpnRuntimePhase.Starting
                 }
 
                 VpnRuntimeCommand.Reload -> when (state.phase) {
                     VpnRuntimePhase.Idle,
-                    VpnRuntimePhase.Stopping,
-                    -> return null
+                    VpnRuntimePhase.Stopping -> return null
 
                     VpnRuntimePhase.Starting -> VpnRuntimePhase.Starting
                     VpnRuntimePhase.Connected,
-                    VpnRuntimePhase.Reloading,
-                    -> VpnRuntimePhase.Reloading
+                    VpnRuntimePhase.Reloading -> VpnRuntimePhase.Reloading
                 }
 
                 is VpnRuntimeCommand.Stop -> VpnRuntimePhase.Stopping
