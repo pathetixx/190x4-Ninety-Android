@@ -28,14 +28,14 @@ internal object LegacySnapshotReader {
 
         val filesReadable = nodesText.valid && profilesText.valid
         val payloadsParsable = rawNodes != null && (!profilesFile.exists() || rawProfiles != null)
-        val journalValid = when {
-            !journalFile.exists() -> true // pre-Room legacy installation
-            !journalText.valid || nodesText.content == null || profilesText.content == null -> false
-            else -> RollbackJournal.validates(
-                manifest = journalText.content,
-                nodesJson = nodesText.content,
-                profilesJson = profilesText.content,
-            )
+        val journalValid = if (!journalFile.exists()) {
+            true // pre-Room legacy installation
+        } else {
+            val manifest = journalText.content
+            val nodesJson = nodesText.content
+            val profilesJson = profilesText.content
+            journalText.valid && manifest != null && nodesJson != null && profilesJson != null &&
+                RollbackJournal.validates(manifest, nodesJson, profilesJson)
         }
         val graphPresent = (nodesFile.exists() || profilesFile.exists()) &&
             filesReadable && payloadsParsable && journalValid
