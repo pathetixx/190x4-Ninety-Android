@@ -134,7 +134,15 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" "ndk;${NDK_VERSION}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
+      - name: Restore pinned libbox.aar
+        id: libbox_cache
+        uses: actions/cache@v4
+        with:
+          path: app/libs/libbox.aar
+          key: libbox-${{ runner.os }}-${{ env.HSB_SHA }}-${{ env.NDK_VERSION }}-gomobile-v0.1.11
+
       - name: Build libbox.aar (gomobile bind, hiddify-sing-box)
+        if: steps.libbox_cache.outputs.cache-hit != 'true'
         run: |
           set -e
           echo "Cloning hiddify-sing-box ${HSB_TAG}…"
@@ -158,6 +166,9 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/app/libs"
           cp libbox.aar "$GITHUB_WORKSPACE/app/libs/libbox.aar"
           echo "libbox.aar -> app/libs/ ($(du -h libbox.aar | cut -f1))"
+
+      - name: Verify libbox.aar
+        run: test -s app/libs/libbox.aar && ls -lh app/libs/libbox.aar
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
