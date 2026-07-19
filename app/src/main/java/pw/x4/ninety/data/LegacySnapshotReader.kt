@@ -13,6 +13,7 @@ internal object LegacySnapshotReader {
         val app = context.applicationContext
         val nodesFile = File(app.filesDir, NODES_FILE)
         val profilesFile = File(app.filesDir, PROFILES_FILE)
+        val preferencesFile = File(app.applicationInfo.dataDir, "shared_prefs/$PREFS_FILE.xml")
         val preferences = app.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
         val legacySubscriptionUrl = preferences.getString(KEY_SUB_URL, null)
 
@@ -41,6 +42,7 @@ internal object LegacySnapshotReader {
                 ),
             ).normalized(),
             graphPresent = nodesFile.exists() || profilesFile.exists(),
+            preferencesPresent = preferencesFile.exists(),
         )
     }
 
