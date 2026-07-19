@@ -1,8 +1,10 @@
 package pw.x4.ninety
 
 import android.app.Application
+import android.util.Log
 import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Options
+import pw.x4.ninety.data.PersistenceRuntime
 import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.theme.NinetyState
@@ -17,10 +19,22 @@ class NinetyApplication : Application() {
         // Снимок logcat: ловит нативный краш ядра (SIGSEGV/abort) прошлой сессии,
         // который мимо redirectStderr. Трейс остаётся в буфере после перезапуска.
         Diag.snapshotLogcat(this)
-        // Тема из Prefs до первой композиции.
+
+        // Room/DataStore миграция завершается и проверяется до чтения UI/VPN состояния.
+        // При любой ошибке используется нетронутый legacy-снимок, marker не ставится.
+        val storage = PersistenceRuntime.initialize(this)
+        Prefs.initialize(this, storage.snapshot.preferences)
+        Log.i(
+            "NinetyStorage",
+            "source=${storage.source}, verified=${storage.migrationVerified}, " +
+                "profiles=${storage.snapshot.profiles.size}, nodes=${storage.snapshot.nodes.size}",
+        )
+
+        // Тема из DataStore-кэша до первой композиции.
         NinetyState.pack = packById(Prefs.get(this).themePack)
-        // Загрузка узлов/активного.
-        Store.init(this)
+        // Загрузка проверенного Room-графа в синхронный compatibility Store.
+        Store.init(this, storage.snapshot)
+
         // Самолечение после апдейта: при росте versionCode перечитать ноды из raw
         // текущим парсером (поднимает фиксы парсера/конфига — раньше требовалось
         // вручную передобавлять подписку). Локально, без сети.
