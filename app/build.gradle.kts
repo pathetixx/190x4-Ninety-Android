@@ -89,6 +89,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:parser"))
     implementation(project(":core:config"))
+    implementation(project(":core:runtime"))
     implementation(project(":data"))
 
     // Ядро VPN — libbox.aar (gomobile bind hiddify-sing-box), кладётся CI в app/libs/.
@@ -100,6 +101,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
