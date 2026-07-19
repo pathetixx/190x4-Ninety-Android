@@ -2,13 +2,14 @@ package pw.x4.ninety.data
 
 import android.content.Context
 import org.json.JSONArray
+import pw.x4.ninety.data.persistence.LegacyStorageInput
 import pw.x4.ninety.data.persistence.PreferenceSnapshot
 import pw.x4.ninety.data.persistence.StorageSnapshot
 import java.io.File
 
 /** Reads the old files without modifying them. Room migration owns the commit and verification. */
 internal object LegacySnapshotReader {
-    fun read(context: Context): StorageSnapshot {
+    fun read(context: Context): LegacyStorageInput {
         val app = context.applicationContext
         val nodesFile = File(app.filesDir, NODES_FILE)
         val profilesFile = File(app.filesDir, PROFILES_FILE)
@@ -23,21 +24,24 @@ internal object LegacySnapshotReader {
             migrateFlatGraph(rawNodes, legacySubscriptionUrl)
         }
 
-        return StorageSnapshot(
-            nodes = nodes.map(Node::toPersistedNode),
-            profiles = profiles.map(Profile::toPersistedProfile),
-            preferences = PreferenceSnapshot(
-                themePack = preferences.getString(KEY_THEME, "kurogane") ?: "kurogane",
-                autoUpdateCheck = preferences.getBoolean(KEY_AUTO_UPDATE, true),
-                activeNodeId = preferences.getString(KEY_ACTIVE_NODE, null),
-                legacySubscriptionUrl = legacySubscriptionUrl,
-                autoConnect = preferences.getBoolean(KEY_AUTO_CONNECT, false),
-                activeProfileId = preferences.getString(KEY_ACTIVE_PROFILE, null),
-                skippedVersion = preferences.getString(KEY_SKIPPED_VERSION, null),
-                lastSeenVersionCode = preferences.getInt(KEY_LAST_VERSION, 0),
-                optionsJson = preferences.getString(KEY_OPTIONS_JSON, null),
-            ),
-        ).normalized()
+        return LegacyStorageInput(
+            snapshot = StorageSnapshot(
+                nodes = nodes.map(Node::toPersistedNode),
+                profiles = profiles.map(Profile::toPersistedProfile),
+                preferences = PreferenceSnapshot(
+                    themePack = preferences.getString(KEY_THEME, "kurogane") ?: "kurogane",
+                    autoUpdateCheck = preferences.getBoolean(KEY_AUTO_UPDATE, true),
+                    activeNodeId = preferences.getString(KEY_ACTIVE_NODE, null),
+                    legacySubscriptionUrl = legacySubscriptionUrl,
+                    autoConnect = preferences.getBoolean(KEY_AUTO_CONNECT, false),
+                    activeProfileId = preferences.getString(KEY_ACTIVE_PROFILE, null),
+                    skippedVersion = preferences.getString(KEY_SKIPPED_VERSION, null),
+                    lastSeenVersionCode = preferences.getInt(KEY_LAST_VERSION, 0),
+                    optionsJson = preferences.getString(KEY_OPTIONS_JSON, null),
+                ),
+            ).normalized(),
+            graphPresent = nodesFile.exists() || profilesFile.exists(),
+        )
     }
 
     private fun readNodes(file: File): List<Node> {
