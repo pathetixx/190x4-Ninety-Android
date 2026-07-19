@@ -86,13 +86,13 @@ jobs:
 
       # Каждая проверка пишет отдельный лог и не обрывает job: так последующий
       # artifact содержит точную ошибку даже при падении компиляции или lint.
-      - name: Core model tests
+      - name: Core model and parser tests
         id: core_tests
         continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
-          gradle :core:model:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
+          gradle :core:model:test :core:parser:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
 
       - name: Assemble debug APK
         id: assemble_debug
@@ -121,6 +121,7 @@ jobs:
           path: |
             ci-*.log
             core/model/build/reports/tests/**
+            core/parser/build/reports/tests/**
             app/build/reports/lint-results-debug.*
             app/build/reports/lint-results-debug/**
 
