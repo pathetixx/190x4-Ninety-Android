@@ -13,7 +13,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Suffix isolates the new split-job pipeline from cancelled legacy runs.
+  group: ${{ github.workflow }}-${{ github.ref }}-split-jobs
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
