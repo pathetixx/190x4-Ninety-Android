@@ -1,7 +1,10 @@
 name: Build Ninety Android
 
-# Релиз — только на push semver-тега vX.Y.Z. Для ad-hoc проверки — workflow_dispatch.
+# PR: полный compile/lint/test с настоящим libbox.
+# Release: только на push semver-тега vX.Y.Z. Для ad-hoc проверки — workflow_dispatch.
 on:
+  pull_request:
+    branches: [main]
   push:
     tags: ['v*']
   workflow_dispatch:
@@ -10,8 +13,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.sha }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Ядро: hiddify-sing-box. Тег перемещаем → пин на конкретный SHA (supply-chain).
@@ -19,14 +22,13 @@ env:
   HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
   NDK_VERSION: 28.0.13004108
   # Node20 deprecated на раннерах (форс Node24 с июня 2026). checkout@v5 уже на node24;
-  # остальные actions (setup-go/java/gradle/upload-artifact/gh-release) ещё просят node20
-  # в action.yml — этот флаг гонит их на node24 сейчас, валидируя совместимость до форса.
+  # остальные actions пока могут декларировать node20 — проверяем Node24 заранее.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 70
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -69,10 +71,7 @@ jobs:
           go install -v github.com/sagernet/gomobile/cmd/gobind@v0.1.11
           export PATH="$PATH:$(go env GOPATH)/bin"
 
-          # build_libbox требует java "openjdk 17"; temurin 17 подходит.
           java --version
-
-          # Собирает libbox.aar (API23) + libbox-legacy.aar (API21).
           go run ./cmd/internal/build_libbox -target android
 
           ls -lh libbox*.aar
@@ -85,18 +84,30 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Unit tests, lint and debug APK
+        run: gradle :core:model:test :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload PR debug APKs
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-debug-${{ github.event.pull_request.number }}
+          path: app/build/outputs/apk/debug/*.apk
+
       - name: Decode release keystore
+        if: github.event_name != 'pull_request'
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/ninety-release.jks"
 
       - name: Assemble release APKs (per-ABI)
+        if: github.event_name != 'pull_request'
         env:
           NINETY_KEYSTORE: ${{ runner.temp }}/ninety-release.jks
           NINETY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           NINETY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Stage APKs
-        id: stage
+      - name: Stage release APKs
+        if: github.event_name != 'pull_request'
         run: |
           set -e
           VER="${GITHUB_REF_NAME#v}"
@@ -108,7 +119,8 @@ jobs:
             echo "staged ninety-android-${VER}-${ABI}.apk ($(du -h "$DIR/app-${ABI}-release.apk" | cut -f1))"
           done
 
-      - name: Upload artifact
+      - name: Upload release artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: ninety-android-apk
