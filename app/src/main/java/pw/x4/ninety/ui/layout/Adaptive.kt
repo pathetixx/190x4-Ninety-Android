@@ -2,13 +2,10 @@ package pw.x4.ninety.ui.layout
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
@@ -65,12 +62,7 @@ fun NinetyPage(
     contentAlignment: Alignment = Alignment.TopCenter,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    Box(
-        modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing),
-        contentAlignment = contentAlignment,
-    ) {
+    Box(modifier.fillMaxSize(), contentAlignment = contentAlignment) {
         Box(
             Modifier
                 .fillMaxWidth()
