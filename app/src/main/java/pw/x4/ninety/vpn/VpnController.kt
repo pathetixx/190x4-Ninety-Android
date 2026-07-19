@@ -101,8 +101,7 @@ object VpnController {
     private fun VpnRuntimePhase.toConnState(): ConnState = when (this) {
         VpnRuntimePhase.Idle -> ConnState.Idle
         VpnRuntimePhase.Starting,
-        VpnRuntimePhase.Reloading,
-        -> ConnState.Connecting
+        VpnRuntimePhase.Reloading -> ConnState.Connecting
 
         VpnRuntimePhase.Connected -> ConnState.Connected
         VpnRuntimePhase.Stopping -> ConnState.Stopping
