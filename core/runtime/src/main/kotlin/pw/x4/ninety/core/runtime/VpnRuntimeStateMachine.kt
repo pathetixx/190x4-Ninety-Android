@@ -44,41 +44,38 @@ class VpnRuntimeStateMachine(
     @Synchronized
     fun snapshot(): VpnRuntimeState = state
 
+    @Synchronized
     fun request(command: VpnRuntimeCommand): VpnRuntimeTicket? {
-        val result = synchronized(this) {
-            val nextPhase = when (command) {
-                VpnRuntimeCommand.Start -> when (state.phase) {
-                    VpnRuntimePhase.Starting,
-                    VpnRuntimePhase.Connected,
-                    VpnRuntimePhase.Reloading -> return null
+        val nextPhase = when (command) {
+            VpnRuntimeCommand.Start -> when (state.phase) {
+                VpnRuntimePhase.Starting,
+                VpnRuntimePhase.Connected,
+                VpnRuntimePhase.Reloading -> return null
 
-                    VpnRuntimePhase.Idle,
-                    VpnRuntimePhase.Stopping -> VpnRuntimePhase.Starting
-                }
-
-                VpnRuntimeCommand.Reload -> when (state.phase) {
-                    VpnRuntimePhase.Idle,
-                    VpnRuntimePhase.Stopping -> return null
-
-                    VpnRuntimePhase.Starting -> VpnRuntimePhase.Starting
-                    VpnRuntimePhase.Connected,
-                    VpnRuntimePhase.Reloading -> VpnRuntimePhase.Reloading
-                }
-
-                is VpnRuntimeCommand.Stop -> VpnRuntimePhase.Stopping
+                VpnRuntimePhase.Idle,
+                VpnRuntimePhase.Stopping -> VpnRuntimePhase.Starting
             }
 
-            val ticket = VpnRuntimeTicket(state.generation + 1, command)
-            val next = state.copy(
-                phase = nextPhase,
-                generation = ticket.generation,
-                lastError = null,
-            )
-            state = next
-            ticket to next
+            VpnRuntimeCommand.Reload -> when (state.phase) {
+                VpnRuntimePhase.Idle,
+                VpnRuntimePhase.Stopping -> return null
+
+                VpnRuntimePhase.Starting -> VpnRuntimePhase.Starting
+                VpnRuntimePhase.Connected,
+                VpnRuntimePhase.Reloading -> VpnRuntimePhase.Reloading
+            }
+
+            is VpnRuntimeCommand.Stop -> VpnRuntimePhase.Stopping
         }
-        onStateChanged(result.second)
-        return result.first
+
+        val ticket = VpnRuntimeTicket(state.generation + 1, command)
+        state = state.copy(
+            phase = nextPhase,
+            generation = ticket.generation,
+            lastError = null,
+        )
+        onStateChanged(state)
+        return ticket
     }
 
     fun completeConnected(ticket: VpnRuntimeTicket, activeServer: String?): Boolean = transition(ticket) {
@@ -113,14 +110,11 @@ class VpnRuntimeStateMachine(
     private fun transition(
         ticket: VpnRuntimeTicket,
         reducer: VpnRuntimeState.() -> VpnRuntimeState?,
-    ): Boolean {
-        val next = synchronized(this) {
-            if (state.generation != ticket.generation) return false
-            val reduced = state.reducer() ?: return false
-            state = reduced
-            reduced
-        }
-        onStateChanged(next)
-        return true
+    ): Boolean = synchronized(this) {
+        if (state.generation != ticket.generation) return false
+        val reduced = state.reducer() ?: return false
+        state = reduced
+        onStateChanged(state)
+        true
     }
 }
