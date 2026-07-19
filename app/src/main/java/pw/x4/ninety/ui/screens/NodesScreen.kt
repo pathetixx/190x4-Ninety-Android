@@ -89,19 +89,20 @@ fun NodesScreen() {
             if (nodes.isEmpty()) {
                 Text(
                     "Нет нод. Добавьте профиль во вкладке «Профили» —\nего серверы появятся здесь.",
-                    color = Ink.TextMid, style = NinetyTypography.bodyMedium,
+                    color = Ink.TextMid,
+                    style = NinetyTypography.bodyMedium,
                 )
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 88.dp), // под FAB
+                    contentPadding = PaddingValues(bottom = 88.dp),
                 ) {
                     if (nodes.size >= 2) {
                         item(key = "__auto__") {
-                            val effNode = nodeByTag(nodes, snap.autoNow)
+                            val effectiveNode = nodeByTag(nodes, snap.autoNow)
                             AutoRow(
                                 selected = Store.isAutoActive,
-                                effectiveName = effNode?.let { it.name.ifBlank { it.host } },
+                                effectiveName = effectiveNode?.let { it.name.ifBlank { it.host } },
                                 ping = snap.autoNow?.let { snap.delays[it] },
                             ) { select(context, Store.AUTO_ID) }
                         }
@@ -112,16 +113,22 @@ fun NodesScreen() {
                             selected = node.id == Store.activeId,
                             ping = snap.delays[ConfigBuilder.tagOf(node)],
                         ) {
-                            if (node.supported) select(context, node.id)
-                            else Toast.makeText(context, "xhttp пока не поддержан (xray, M3)", Toast.LENGTH_SHORT).show()
+                            if (node.supported) {
+                                select(context, node.id)
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "xhttp пока не поддержан (xray, M3)",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         }
                     }
                 }
             }
         }
 
-        // FAB-молния: перетест пинга всего профиля (как на desktop). Только при туннеле.
-        if (connected && nodes.size >= 1) {
+        if (connected && nodes.isNotEmpty()) {
             TestAllFab(
                 testing = snap.testing,
                 modifier = Modifier
@@ -132,11 +139,10 @@ fun NodesScreen() {
     }
 }
 
-/** Выбрать узел/режим и, если туннель уже поднят, перестроить его на лету. */
+/** Выбрать узел/режим и перестроить активный либо ещё запускающийся туннель. */
 private fun select(context: Context, id: String) {
     Store.setActive(id)
-    // только Connected: при Connecting commandServer ещё null → reload-интент стартовал бы заново.
-    if (VpnController.state == ConnState.Connected) NinetyVpnService.reload(context)
+    if (VpnController.isActive) NinetyVpnService.reload(context)
 }
 
 private fun nodeByTag(nodes: List<Node>, tag: String?): Node? {
@@ -144,7 +150,6 @@ private fun nodeByTag(nodes: List<Node>, tag: String?): Node? {
     return nodes.firstOrNull { ConfigBuilder.tagOf(it) == tag }
 }
 
-/** Грейд задержки = desktop gradeDelay: good=0 / mid=1 / bad=2 / dead=3. */
 private fun pingGrade(ms: Int?): Int = when {
     ms == null || ms <= 0 || ms >= 65000 -> 3
     ms < 800 -> 0
@@ -152,23 +157,28 @@ private fun pingGrade(ms: Int?): Int = when {
     else -> 2
 }
 
-/** Сортировка нод по пингу (GRADE_ORDER → delay → исходный индекс), порт desktop. */
 private fun sortByPing(nodes: List<Node>, delays: Map<String, Int>): List<Node> =
     nodes.withIndex().sortedWith(
         compareBy(
             { pingGrade(delays[ConfigBuilder.tagOf(it.value)]) },
-            { delays[ConfigBuilder.tagOf(it.value)]?.takeIf { d -> d > 0 } ?: 99999 },
+            { delays[ConfigBuilder.tagOf(it.value)]?.takeIf { delay -> delay > 0 } ?: 99999 },
             { it.index },
-        )
+        ),
     ).map { it.value }
 
-/** Круглый FAB-перетест: молния, при работе — вращается. */
 @Composable
-private fun TestAllFab(testing: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun TestAllFab(
+    testing: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     val pack = NinetyState.pack
     val spin = rememberInfiniteTransition(label = "fabspin")
     val angle by spin.animateFloat(
-        0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "ang",
+        0f,
+        360f,
+        infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
+        label = "ang",
     )
     Box(
         modifier
@@ -179,14 +189,14 @@ private fun TestAllFab(testing: Boolean, modifier: Modifier = Modifier, onClick:
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            NinetyIcons.Nodes, contentDescription = "Перетестировать ноды",
+            NinetyIcons.Nodes,
+            contentDescription = "Перетестировать ноды",
             tint = Ink.Ink0,
             modifier = Modifier.size(22.dp).rotate(if (testing) angle else 0f),
         )
     }
 }
 
-/** Строка автовыбора — урлтест по всем нодам профиля (как «auto» в desktop). */
 @Composable
 private fun AutoRow(
     selected: Boolean,
@@ -200,12 +210,22 @@ private fun AutoRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(
-                if (selected) Brush.verticalGradient(0f to pack.accentSoft, 0.5f to Ink.Ink1, 1f to Ink.Ink1)
-                else SolidColor(Ink.Ink1),
+                if (selected) {
+                    Brush.verticalGradient(
+                        0f to pack.accentSoft,
+                        0.5f to Ink.Ink1,
+                        1f to Ink.Ink1,
+                    )
+                } else {
+                    SolidColor(Ink.Ink1)
+                },
                 RoundedCornerShape(14.dp),
             )
             .border(1.dp, if (selected) pack.accentSoft else Ink.Line2, RoundedCornerShape(14.dp))
-            .topHairline(color = if (selected) pack.accent else Color.White, alpha = if (selected) 0.5f else 0.08f)
+            .topHairline(
+                color = if (selected) pack.accent else Color.White,
+                alpha = if (selected) 0.5f else 0.08f,
+            )
             .clickable { onClick() }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -214,7 +234,12 @@ private fun AutoRow(
             Modifier.size(28.dp).background(pack.accentSoft, RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(NinetyIcons.Nodes, contentDescription = null, tint = pack.accentBright, modifier = Modifier.size(15.dp))
+            Icon(
+                NinetyIcons.Nodes,
+                contentDescription = null,
+                tint = pack.accentBright,
+                modifier = Modifier.size(15.dp),
+            )
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -222,7 +247,9 @@ private fun AutoRow(
             Text(
                 effectiveName?.let { "Сейчас → $it" } ?: "Быстрейший узел по задержке",
                 color = if (effectiveName != null) pack.accentBright else Ink.TextLo,
-                style = MonoStyle, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MonoStyle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(10.dp))
@@ -231,25 +258,40 @@ private fun AutoRow(
 }
 
 @Composable
-private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Unit) {
+private fun NodeRow(
+    node: Node,
+    selected: Boolean,
+    ping: Int?,
+    onClick: () -> Unit,
+) {
     val pack = NinetyState.pack
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(
-                if (selected) Brush.verticalGradient(0f to pack.accentSoft, 0.5f to Ink.Ink1, 1f to Ink.Ink1)
-                else SolidColor(Ink.Ink1),
+                if (selected) {
+                    Brush.verticalGradient(
+                        0f to pack.accentSoft,
+                        0.5f to Ink.Ink1,
+                        1f to Ink.Ink1,
+                    )
+                } else {
+                    SolidColor(Ink.Ink1)
+                },
                 RoundedCornerShape(14.dp),
             )
             .border(1.dp, if (selected) pack.accentSoft else Ink.Line2, RoundedCornerShape(14.dp))
-            .topHairline(color = if (selected) pack.accent else Color.White, alpha = if (selected) 0.5f else 0.08f)
+            .topHairline(
+                color = if (selected) pack.accent else Color.White,
+                alpha = if (selected) 0.5f else 0.08f,
+            )
             .clickable { onClick() }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(10.dp).background(if (selected) pack.accent else Ink.Line3, CircleShape)
+            Modifier.size(10.dp).background(if (selected) pack.accent else Ink.Line3, CircleShape),
         )
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
@@ -257,22 +299,25 @@ private fun NodeRow(node: Node, selected: Boolean, ping: Int?, onClick: () -> Un
                 node.name.ifBlank { node.host },
                 color = Ink.TextHi,
                 style = NinetyTypography.titleMedium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 "${node.proto} · ${node.host}:${node.port}" + if (node.isXhttp) " · xhttp" else "",
-                color = Ink.TextLo, style = MonoStyle,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = Ink.TextLo,
+                style = MonoStyle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.size(10.dp))
-        // xhttp-ноды теперь идут через xray-мост → sing-box их пингует как обычные.
         PingPill(ping)
     }
 }
 
 private fun plural(n: Int): String {
-    val mod10 = n % 10; val mod100 = n % 100
+    val mod10 = n % 10
+    val mod100 = n % 100
     return when {
         mod10 == 1 && mod100 != 11 -> "нода"
         mod10 in 2..4 && mod100 !in 12..14 -> "ноды"
