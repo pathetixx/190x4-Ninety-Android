@@ -7,14 +7,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import pw.x4.ninety.core.model.ProxySelection
+import pw.x4.ninety.data.persistence.StorageSnapshot
 import java.io.File
 
 /**
- * Хранилище профилей + нод (как desktop-Ninety). Профиль = подписка (много нод)
- * или одиночный конфиг (одна нода); каждая нода привязана к профилю через subId.
- * Активный профиль определяет, какие ноды видны в «Ноды» и в плитке Главной;
- * activeId хранит либо конкретную ноду, либо sentinel Auto.
- * Persist: profiles.json + nodes.json, активные id — в Prefs.
+ * Compatibility store for existing Compose and VPN callers.
+ *
+ * The in-memory API stays synchronous, but startup data comes from verified Room state. Mutations
+ * are dual-written in crash-safe order: legacy JSON rollback journal first, then Room transaction.
  */
 object Store {
     private lateinit var nodesFile: File
@@ -29,20 +29,25 @@ object Store {
     var activeProfileId by mutableStateOf<String?>(null)
         private set
 
-    fun init(context: Context) {
+    fun init(context: Context, snapshot: StorageSnapshot) {
         if (::nodesFile.isInitialized) return
-        nodesFile = File(context.filesDir, "nodes.json")
-        profilesFile = File(context.filesDir, "profiles.json")
-        prefs = Prefs.get(context)
-        load()
-        activeId = prefs.activeNodeId
-        activeProfileId = prefs.activeProfileId ?: profiles.firstOrNull()?.id
+        val app = context.applicationContext
+        nodesFile = File(app.filesDir, "nodes.json")
+        profilesFile = File(app.filesDir, "profiles.json")
+        prefs = Prefs.get(app)
+
+        nodes.clear()
+        nodes.addAll(snapshot.nodes.map { it.toLegacyNode() })
+        profiles.clear()
+        profiles.addAll(snapshot.profiles.map { it.toLegacyProfile() })
+        activeId = snapshot.preferences.activeNodeId
+        activeProfileId = snapshot.preferences.activeProfileId ?: profiles.firstOrNull()?.id
     }
 
-    // legacy: оставлено для миграции, UI больше не использует
+    // legacy: оставлено для миграции/rollback, UI больше не использует
     var subscriptionUrl: String?
         get() = prefs.subscriptionUrl
-        set(v) { prefs.subscriptionUrl = v }
+        set(value) { prefs.subscriptionUrl = value }
 
     /** Sentinel для активного id: автовыбор быстрейшего узла (urltest). */
     const val AUTO_ID = ProxySelection.AUTO_ID
@@ -55,21 +60,18 @@ object Store {
     fun activeNode(): Node? = nodes.firstOrNull { it.id == activeId }
     val isAutoActive: Boolean get() = selection == ProxySelection.Auto
 
-    /**
-     * Есть ли валидный выбор для запуска VPN.
-     * Auto валиден, если в активном профиле есть хотя бы одна поддерживаемая нода.
-     */
+    /** Auto валиден, если в активном профиле есть хотя бы одна поддерживаемая нода. */
     fun hasRunnableSelection(): Boolean = when (selection) {
         ProxySelection.Auto -> supportedActiveNodes().isNotEmpty()
         is ProxySelection.Node -> activeNode()?.supported == true
         null -> false
     }
 
-    /** Подпись активного выбора для уведомления/UI: «Авто» либо имя узла. */
     fun activeNodeLabel(): String? = when {
         isAutoActive -> "Авто"
         else -> activeNode()?.let { it.name.ifBlank { it.host } }
     }
+
     fun activeProfile(): Profile? = profiles.firstOrNull { it.id == activeProfileId }
     fun nodesOf(profileId: String?): List<Node> = nodes.filter { it.subId == profileId }
     fun activeProfileNodes(): List<Node> = nodesOf(activeProfileId)
@@ -78,8 +80,9 @@ object Store {
 
     // ── Активный выбор ──
     fun setActive(id: String) {
-        // Не позволяем записать пустое/невалидное значение через публичный API.
-        val next = requireNotNull(ProxySelection.fromPersisted(id)) { "proxy selection must not be blank" }
+        val next = requireNotNull(ProxySelection.fromPersisted(id)) {
+            "proxy selection must not be blank"
+        }
         activeId = next.persistedValue
         prefs.activeNodeId = next.persistedValue
     }
@@ -87,7 +90,6 @@ object Store {
     fun setActiveProfile(id: String) {
         activeProfileId = id
         prefs.activeProfileId = id
-        // активная нода переезжает на первую ноду нового профиля
         val first = nodesOf(id).firstOrNull()?.id
         activeId = first
         prefs.activeNodeId = first
@@ -96,16 +98,29 @@ object Store {
     // ── Профили ──
 
     /** Подписка: создать/заменить профиль и его ноды. url="" → импорт сырого контента. */
-    fun addSubscriptionProfile(url: String, content: String, info: SubUserinfo, name: String? = null): Int {
+    fun addSubscriptionProfile(
+        url: String,
+        content: String,
+        info: SubUserinfo,
+        name: String? = null,
+    ): Int {
         val parsed = LinkParser.parseSubscription(content)
         require(parsed.isNotEmpty()) { "Подписка пуста или не распознана" }
         val id = if (url.isBlank()) "sub:raw:" + content.trim().hashCode() else Profile.subId(url)
         nodes.removeAll { it.subId == id }
         val tagged = parsed.map { it.copy(fromSub = true, subId = id) }
-        for (n in tagged) if (nodes.none { it.id == n.id }) nodes.add(n)
+        for (node in tagged) if (nodes.none { it.id == node.id }) nodes.add(node)
         upsertProfile(
-            Profile(id, name ?: hostOf(url) ?: "Подписка", "sub", url,
-                info.used, info.total, info.expire, System.currentTimeMillis())
+            Profile(
+                id = id,
+                name = name ?: hostOf(url) ?: "Подписка",
+                type = "sub",
+                url = url,
+                used = info.used,
+                total = info.total,
+                expire = info.expire,
+                updatedAt = System.currentTimeMillis(),
+            ),
         )
         setActiveProfile(id)
         saveAll()
@@ -115,11 +130,17 @@ object Store {
     /** Одиночный конфиг: профиль из одной ноды. false если ссылка не распознана/дубль. */
     fun addSingleConfig(raw: String): Boolean {
         val node = LinkParser.parseLink(raw) ?: return false
-        val id = "single:" + node.id
+        val id = "single:${node.id}"
         if (profiles.any { it.id == id }) return false
         nodes.add(node.copy(subId = id))
-        upsertProfile(Profile(id, node.name.ifBlank { node.host }, "single", "",
-            updatedAt = System.currentTimeMillis()))
+        upsertProfile(
+            Profile(
+                id = id,
+                name = node.name.ifBlank { node.host },
+                type = "single",
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
         if (activeProfileId == null) setActiveProfile(id)
         saveAll()
         return true
@@ -131,15 +152,20 @@ object Store {
         require(parsed.isNotEmpty()) { "Подписка пуста или не распознана" }
         nodes.removeAll { it.subId == id }
         val tagged = parsed.map { it.copy(fromSub = true, subId = id) }
-        for (n in tagged) if (nodes.none { it.id == n.id }) nodes.add(n)
-        profiles.firstOrNull { it.id == id }?.let { p ->
-            upsertProfile(p.copy(used = info.used, total = info.total, expire = info.expire,
-                updatedAt = System.currentTimeMillis()))
+        for (node in tagged) if (nodes.none { it.id == node.id }) nodes.add(node)
+        profiles.firstOrNull { it.id == id }?.let { profile ->
+            upsertProfile(
+                profile.copy(
+                    used = info.used,
+                    total = info.total,
+                    expire = info.expire,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
         }
 
         if (activeProfileId == id) {
-            val current = selection
-            val keepCurrent = when (current) {
+            val keepCurrent = when (val current = selection) {
                 ProxySelection.Auto -> supportedActiveNodes().isNotEmpty()
                 is ProxySelection.Node -> nodes.any { it.id == current.nodeId && it.subId == id }
                 null -> false
@@ -159,27 +185,24 @@ object Store {
         nodes.removeAll { it.subId == id }
         if (activeProfileId == id) {
             val next = profiles.firstOrNull()
-            if (next != null) setActiveProfile(next.id)
-            else { activeProfileId = null; prefs.activeProfileId = null; activeId = null; prefs.activeNodeId = null }
+            if (next != null) {
+                setActiveProfile(next.id)
+            } else {
+                activeProfileId = null
+                activeId = null
+                prefs.activeProfileId = null
+                prefs.activeNodeId = null
+            }
         }
         saveAll()
     }
 
-    private fun upsertProfile(p: Profile) {
-        val i = profiles.indexOfFirst { it.id == p.id }
-        if (i >= 0) profiles[i] = p else profiles.add(p)
+    private fun upsertProfile(profile: Profile) {
+        val index = profiles.indexOfFirst { it.id == profile.id }
+        if (index >= 0) profiles[index] = profile else profiles.add(profile)
     }
 
-    /**
-     * Самолечение после апдейта: перечитать КАЖДУЮ ноду из её исходной ссылки (`raw`)
-     * текущим [LinkParser]. Подхватывает поля, которые добавили новые версии парсера
-     * (например xhttp `extra`: downloadSettings/xmux/паддинги с v0.1.15) — раньше для
-     * этого приходилось вручную передобавлять подписку. Локально, без сети.
-     *
-     * id ноды стабилен (хэш не зависит от `type`/`extra`) → активный выбор НЕ слетает;
-     * `subId`/`fromSub` сохраняем (привязка к профилю). Ноды без `raw` или с битой
-     * ссылкой остаются как есть. Возвращает число фактически изменившихся нод.
-     */
+    /** Reparse every raw link with the current parser after an app update. */
     fun reparseAllFromRaw(): Int {
         if (!::nodesFile.isInitialized || nodes.isEmpty()) return 0
         var healed = 0
@@ -190,75 +213,35 @@ object Store {
             if (merged.toJson().toString() != old.toJson().toString()) healed++
             merged
         }
-        if (healed > 0) { nodes.clear(); nodes.addAll(rebuilt); saveAll() }
+        if (healed > 0) {
+            nodes.clear()
+            nodes.addAll(rebuilt)
+            saveAll()
+        }
         return healed
     }
 
     fun clear() {
-        nodes.clear(); profiles.clear()
-        activeId = null; activeProfileId = null
-        prefs.activeNodeId = null; prefs.activeProfileId = null
+        nodes.clear()
+        profiles.clear()
+        activeId = null
+        activeProfileId = null
+        prefs.activeNodeId = null
+        prefs.activeProfileId = null
         saveAll()
     }
 
-    // ── Персист + миграция ──
-    private fun load() {
-        val rawNodes = readNodes()
-        if (profilesFile.exists()) {
-            try {
-                val arr = JSONArray(profilesFile.readText())
-                profiles.clear()
-                for (i in 0 until arr.length()) profiles.add(Profile.fromJson(arr.getJSONObject(i)))
-            } catch (_: Exception) {}
-            nodes.clear(); nodes.addAll(rawNodes)
-            return
-        }
-        // миграция из v0.1.x (плоский список нод + один subscriptionUrl)
-        migrate(rawNodes)
-    }
-
-    private fun readNodes(): List<Node> {
-        if (!nodesFile.exists()) return emptyList()
-        return try {
-            val arr = JSONArray(nodesFile.readText())
-            (0 until arr.length()).map { Node.fromJson(arr.getJSONObject(it)) }
-        } catch (_: Exception) { emptyList() }
-    }
-
-    private fun migrate(old: List<Node>) {
-        if (old.isEmpty()) return
-        val now = System.currentTimeMillis()
-        val migrated = mutableListOf<Node>()
-
-        val subNodes = old.filter { it.fromSub }
-        if (subNodes.isNotEmpty()) {
-            val url = prefs.subscriptionUrl.orEmpty()
-            val id = if (url.isBlank()) "sub:raw:legacy" else Profile.subId(url)
-            profiles.add(Profile(id, hostOf(url) ?: "Подписка", "sub", url, updatedAt = now))
-            subNodes.forEach { migrated.add(it.copy(subId = id)) }
-        }
-        old.filter { !it.fromSub }.forEach { n ->
-            val id = "single:" + n.id
-            if (profiles.none { it.id == id }) {
-                profiles.add(Profile(id, n.name.ifBlank { n.host }, "single", "", updatedAt = now))
-                migrated.add(n.copy(subId = id))
-            }
-        }
-        nodes.clear(); nodes.addAll(migrated)
-        val act = prefs.activeNodeId
-        activeProfileId = migrated.firstOrNull { it.id == act }?.subId ?: profiles.firstOrNull()?.id
-        prefs.activeProfileId = activeProfileId
-        saveAll()
-    }
-
+    /** JSON first = rollback journal; Room second = encrypted source of truth. */
     private fun saveAll() {
-        try {
+        runCatching {
             nodesFile.writeText(JSONArray().apply { nodes.forEach { put(it.toJson()) } }.toString())
             profilesFile.writeText(JSONArray().apply { profiles.forEach { put(it.toJson()) } }.toString())
-        } catch (_: Exception) {}
+        }.getOrElse { throw IllegalStateException("failed to write legacy rollback journal", it) }
+
+        PersistenceRuntime.persistGraph(nodes.toList(), profiles.toList())
     }
 
-    private fun hostOf(url: String): String? = try {
+    private fun hostOf(url: String): String? = runCatching {
         if (url.isBlank()) null else java.net.URI(url).host?.removePrefix("www.")
-    } catch (_: Exception) { null }
+    }.getOrNull()
 }
