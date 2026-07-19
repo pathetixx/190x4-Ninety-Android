@@ -5,6 +5,9 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.service.quicksettings.TileService
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,16 +39,24 @@ object VpnController {
     private val _snapshot = MutableStateFlow(VpnSnapshot())
     val snapshot: StateFlow<VpnSnapshot> = _snapshot.asStateFlow()
 
+    // Переходный Compose facade: старые экраны продолжают автоматически перерисовываться,
+    // но единственным runtime source of truth остаётся StateFlow выше.
+    private var composeSnapshot by mutableStateOf(VpnSnapshot())
+
     private val machine = VpnRuntimeStateMachine(onStateChanged = ::publish)
 
     /** Контекст приложения — для пинка QS-плитки на смену состояния. Ставит Application. */
     @Volatile
     var appContext: Context? = null
 
-    val state: ConnState get() = snapshot.value.state
-    val activeServer: String? get() = snapshot.value.activeServer
-    val lastError: String? get() = snapshot.value.lastError
-    val isActive: Boolean get() = state == ConnState.Connecting || state == ConnState.Connected
+    val state: ConnState get() = composeSnapshot.state
+    val activeServer: String? get() = composeSnapshot.activeServer
+    val lastError: String? get() = composeSnapshot.lastError
+    val isActive: Boolean
+        get() {
+            val current = snapshot.value.state
+            return current == ConnState.Connecting || current == ConnState.Connected
+        }
 
     internal fun requestStart(): VpnRuntimeTicket? = machine.request(VpnRuntimeCommand.Start)
 
@@ -76,6 +87,7 @@ object VpnController {
         _snapshot.value = next
 
         post {
+            composeSnapshot = next
             if (previous.state != ConnState.Connected && next.state == ConnState.Connected) {
                 ClashMonitor.start()
             }
