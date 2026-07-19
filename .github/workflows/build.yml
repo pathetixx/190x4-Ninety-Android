@@ -1,7 +1,7 @@
 name: Build Ninety Android
 
-# PR: полный compile/lint/test с настоящим libbox.
-# Release: только на push semver-тега vX.Y.Z. Для ad-hoc проверки — workflow_dispatch.
+# Core tests fail fast before the expensive native build.
+# Release: only on semver tag vX.Y.Z; workflow_dispatch is for ad-hoc verification.
 on:
   pull_request:
     branches: [main]
@@ -17,16 +17,51 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Ядро: hiddify-sing-box. Тег перемещаем → пин на конкретный SHA (supply-chain).
   HSB_TAG: v1.13.0.h5
   HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
   NDK_VERSION: 28.0.13004108
-  # Node20 deprecated на раннерах (форс Node24 с июня 2026). checkout@v5 уже на node24;
-  # остальные actions пока могут декларировать node20 — проверяем Node24 заранее.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
+  core:
+    name: core tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Model and parser tests
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :core:model:test :core:parser:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
+
+      - name: Upload PR core diagnostics
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-core-diagnostics-${{ github.event.pull_request.number }}
+          if-no-files-found: warn
+          path: |
+            ci-core-tests.log
+            core/model/build/reports/tests/**
+            core/parser/build/reports/tests/**
+
+  android:
+    name: android build
+    needs: core
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
@@ -61,12 +96,11 @@ jobs:
           cd hsb
           HEAD="$(git rev-parse HEAD)"
           if [ "$HEAD" != "${HSB_SHA}" ]; then
-            echo "::error::hiddify-sing-box ${HSB_TAG} = $HEAD, ожидался ${HSB_SHA} (тег перемещён?)"
+            echo "::error::hiddify-sing-box ${HSB_TAG} = $HEAD, expected ${HSB_SHA}"
             exit 1
           fi
           echo "Verified hiddify-sing-box commit $HEAD."
 
-          # gomobile/gobind — форк sagernet (sing-box собирается только им).
           go install -v github.com/sagernet/gomobile/cmd/gomobile@v0.1.11
           go install -v github.com/sagernet/gomobile/cmd/gobind@v0.1.11
           export PATH="$PATH:$(go env GOPATH)/bin"
@@ -84,19 +118,8 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      # Каждая проверка пишет отдельный лог и не обрывает job: так последующий
-      # artifact содержит точную ошибку даже при падении компиляции или lint.
-      - name: Core model and parser tests
-        id: core_tests
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          gradle :core:model:test :core:parser:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
-
       - name: Assemble debug APK
         id: assemble_debug
-        if: always()
         continue-on-error: true
         shell: bash
         run: |
@@ -112,30 +135,27 @@ jobs:
           set -o pipefail
           gradle :app:lintDebug --no-daemon --stacktrace 2>&1 | tee ci-lint-debug.log
 
-      - name: Upload PR verification diagnostics
+      - name: Upload PR Android diagnostics
         if: always() && github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: ninety-android-ci-diagnostics-${{ github.event.pull_request.number }}
+          name: ninety-android-build-diagnostics-${{ github.event.pull_request.number }}
           if-no-files-found: warn
           path: |
-            ci-*.log
-            core/model/build/reports/tests/**
-            core/parser/build/reports/tests/**
+            ci-assemble-debug.log
+            ci-lint-debug.log
             app/build/reports/lint-results-debug.*
             app/build/reports/lint-results-debug/**
 
-      - name: Fail when verification failed
+      - name: Fail when Android verification failed
         if: always()
         env:
-          CORE_TESTS: ${{ steps.core_tests.outcome }}
           ASSEMBLE_DEBUG: ${{ steps.assemble_debug.outcome }}
           LINT_DEBUG: ${{ steps.lint_debug.outcome }}
         run: |
-          echo "core tests:     $CORE_TESTS"
           echo "assemble debug: $ASSEMBLE_DEBUG"
           echo "lint debug:     $LINT_DEBUG"
-          if [ "$CORE_TESTS" != "success" ] || [ "$ASSEMBLE_DEBUG" != "success" ] || [ "$LINT_DEBUG" != "success" ]; then
+          if [ "$ASSEMBLE_DEBUG" != "success" ] || [ "$LINT_DEBUG" != "success" ]; then
             exit 1
           fi
 
