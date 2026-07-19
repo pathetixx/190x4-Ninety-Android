@@ -1,22 +1,25 @@
 package pw.x4.ninety.vpn
 
+import android.os.Build
 import pw.x4.ninety.core.config.ConfigNode
 import pw.x4.ninety.core.config.FragmentMode
 import pw.x4.ninety.core.config.Ipv6Mode
-import pw.x4.ninety.core.config.SingBoxConfigBuilder
+import pw.x4.ninety.core.config.NinetyConfigBuilder
+import pw.x4.ninety.core.config.RoutingPlatform
 import pw.x4.ninety.core.config.SingBoxOptions
 import pw.x4.ninety.core.config.TunStack
 import pw.x4.ninety.core.model.ProxyNode
 import pw.x4.ninety.core.model.ProxyProtocol
 import pw.x4.ninety.core.model.ProxySelection
+import pw.x4.ninety.core.model.RoutingRuleType
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Options
 
 /**
- * Android compatibility facade around the pure `:core:config` builder.
+ * Android compatibility facade around the pure config builders.
  *
- * VpnService and the existing UI keep their stable API while legacy persisted models are
- * migrated independently. All sing-box JSON rules now live in one deterministic JVM module.
+ * VpnService and UI keep their stable API while all sing-box JSON rules live in deterministic JVM
+ * modules. Package-name routing is emitted only where Android can resolve connection ownership.
  */
 object ConfigBuilder {
     fun build(
@@ -24,7 +27,7 @@ object ConfigBuilder {
         selectedId: String?,
         logPath: String? = null,
         opts: Options.Data = Options.data,
-    ): String = SingBoxConfigBuilder.build(
+    ): String = NinetyConfigBuilder.build(
         nodes = nodes.map { it.toConfigNode() },
         selection = ProxySelection.fromPersisted(selectedId),
         logPath = logPath,
@@ -33,7 +36,7 @@ object ConfigBuilder {
 
     fun tagOf(node: Node): String = tagOfId(node.id)
 
-    fun tagOfId(id: String): String = SingBoxConfigBuilder.tagOfId(id)
+    fun tagOfId(id: String): String = NinetyConfigBuilder.tagOfId(id)
 
     private fun Node.toConfigNode(): ConfigNode = ConfigNode(
         id = id,
@@ -85,6 +88,10 @@ object ConfigBuilder {
         blockAds = blockAds,
         bypassLan = bypassLan,
         ipv6Mode = Ipv6Mode.fromWire(ipv6Mode),
+        customRules = customRules.filter { rule ->
+            rule.type != RoutingRuleType.ANDROID_PACKAGE || Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        },
+        routingPlatform = RoutingPlatform.ANDROID,
         dnsRemote = dnsRemote,
         dnsDirect = dnsDirect,
         fakeDns = fakeDns,
