@@ -6,7 +6,6 @@ import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -56,10 +55,10 @@ object ProxyLinkParser {
         if (source.isEmpty()) return emptyList()
 
         val decoded = decodeBase64(source)
-        val body = decoded?.takeIf { text -> knownSchemes.any(text::contains) } ?: source
+        val body = decoded?.takeIf { text -> knownSchemes.any { scheme -> text.contains(scheme) } } ?: source
         return body.lineSequence()
-            .map(String::trim)
-            .filter(String::isNotEmpty)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
             .mapNotNull(::parseLink)
             .toList()
     }
@@ -298,7 +297,7 @@ object ProxyLinkParser {
     private fun splitHostPort(value: String, defaultPort: Int? = null): HostPort {
         val raw = value.trim()
         require(raw.isNotEmpty()) { "missing host" }
-        if (raw.startsWith('[')) {
+        if (raw.startsWith("[")) {
             val closing = raw.indexOf(']')
             require(closing > 1) { "invalid IPv6 host" }
             val host = raw.substring(1, closing)
@@ -324,7 +323,7 @@ object ProxyLinkParser {
     }
 
     private fun decodeBase64(value: String): String? {
-        val cleaned = value.filterNot(Char::isWhitespace)
+        val cleaned = value.filterNot { it.isWhitespace() }
         if (cleaned.isEmpty()) return null
         val padded = cleaned + "=".repeat((4 - cleaned.length % 4) % 4)
         for (decoder in listOf(Base64.getDecoder(), Base64.getUrlDecoder())) {
