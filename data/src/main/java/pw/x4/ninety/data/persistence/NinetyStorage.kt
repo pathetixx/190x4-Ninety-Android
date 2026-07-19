@@ -9,9 +9,9 @@ import kotlinx.coroutines.sync.withLock
  * Room + DataStore gateway.
  *
  * Migration is deliberately two-phase: write and read back the Room graph, write and read back
- * DataStore, then set the marker. Legacy files remain untouched and are dual-written as a rollback
- * journal. Because the app writes JSON before Room, a valid graph mismatch means Room did not
- * finish the last commit and can safely be recovered from JSON.
+ * DataStore, then set the marker. Legacy files remain available during the transition. Since the
+ * compatibility facades write legacy state first, a verified mismatch indicates an interrupted
+ * modern-store commit and the legacy snapshot is the latest complete value.
  */
 class NinetyStorage private constructor(
     private val database: NinetyDatabase,
@@ -23,64 +23,71 @@ class NinetyStorage private constructor(
     suspend fun initialize(legacy: LegacyStorageInput): StorageLoadResult = mutex.withLock {
         val legacySnapshot = legacy.snapshot.normalized()
         val migrationVersion = preferences.migrationVersion()
-        val currentPreferences = preferences.read()
+        val storedPreferences = preferences.read()
         val databaseGraph = readGraph()
-        val legacyDiffers = legacy.graphPresent && !databaseGraph.matches(legacySnapshot)
+        val graphDiffers = legacy.graphPresent && !databaseGraph.matches(legacySnapshot)
+        val preferencesDiffer = legacy.preferencesPresent &&
+            legacySnapshot.preferences != storedPreferences
 
         if (migrationVersion >= CURRENT_MIGRATION_VERSION) {
-            if (legacyDiffers) {
+            if (graphDiffers) {
                 replaceGraphInternal(legacySnapshot.nodes, legacySnapshot.profiles)
-                val recovered = StorageSnapshot(
-                    nodes = legacySnapshot.nodes,
-                    profiles = legacySnapshot.profiles,
-                    preferences = currentPreferences,
-                ).normalized()
-                verifyGraph(recovered.nodes, recovered.profiles)
-                return@withLock StorageLoadResult(
-                    snapshot = recovered,
-                    source = StorageSource.LEGACY_RECOVERY,
-                    migrationVerified = true,
-                )
             }
+            if (preferencesDiffer) {
+                preferences.write(legacySnapshot.preferences)
+            }
+
             val snapshot = StorageSnapshot(
-                nodes = databaseGraph.nodes,
-                profiles = databaseGraph.profiles,
-                preferences = currentPreferences,
+                nodes = if (graphDiffers) legacySnapshot.nodes else databaseGraph.nodes,
+                profiles = if (graphDiffers) legacySnapshot.profiles else databaseGraph.profiles,
+                preferences = if (preferencesDiffer) legacySnapshot.preferences else storedPreferences,
             ).normalized()
+            verifyGraph(snapshot.nodes, snapshot.profiles)
+            require(preferences.read() == snapshot.preferences) {
+                "DataStore verification failed"
+            }
             return@withLock StorageLoadResult(
                 snapshot = snapshot,
-                source = if (snapshot.isEmpty()) StorageSource.EMPTY else StorageSource.ROOM,
+                source = when {
+                    graphDiffers || preferencesDiffer -> StorageSource.LEGACY_RECOVERY
+                    snapshot.isEmpty() -> StorageSource.EMPTY
+                    else -> StorageSource.ROOM
+                },
                 migrationVerified = true,
             )
         }
 
-        val importLegacy = legacy.graphPresent && (databaseGraph.isEmpty() || legacyDiffers)
-        val expectedGraph = if (importLegacy) {
+        val importGraph = legacy.graphPresent && (databaseGraph.isEmpty() || graphDiffers)
+        val expectedGraph = if (importGraph) {
             replaceGraphInternal(legacySnapshot.nodes, legacySnapshot.profiles)
             Graph(legacySnapshot.nodes, legacySnapshot.profiles)
         } else {
-            // Crash recovery: Room may have committed before the DataStore marker.
+            // The Room transaction may already have committed before the marker was persisted.
             databaseGraph
         }
-
+        val expectedPreferences = if (legacy.preferencesPresent) {
+            legacySnapshot.preferences
+        } else {
+            storedPreferences
+        }
         val expected = StorageSnapshot(
             nodes = expectedGraph.nodes,
             profiles = expectedGraph.profiles,
-            preferences = legacySnapshot.preferences,
+            preferences = expectedPreferences,
         ).normalized()
 
         preferences.write(expected.preferences)
         verifyGraph(expected.nodes, expected.profiles)
         val readBack = readSnapshotInternal().normalized()
         require(readBack == expected) {
-            "Room/DataStore read-back verification failed; legacy data was kept untouched"
+            "Room/DataStore read-back verification failed"
         }
         preferences.markMigrationComplete(CURRENT_MIGRATION_VERSION)
 
         StorageLoadResult(
             snapshot = readBack,
             source = when {
-                importLegacy -> StorageSource.LEGACY_IMPORT
+                importGraph || legacy.preferencesPresent -> StorageSource.LEGACY_IMPORT
                 readBack.isEmpty() -> StorageSource.EMPTY
                 else -> StorageSource.ROOM
             },
