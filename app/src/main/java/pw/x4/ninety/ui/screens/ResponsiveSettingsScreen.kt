@@ -79,7 +79,7 @@ private data class AdaptiveSettingSection(
 private val AdaptiveSettingSections = listOf(
     AdaptiveSettingSection("general", "Общие", "Запуск, обновления и диагностика соединения", SettingsIcons.General),
     AdaptiveSettingSection("appearance", "Оформление", "Полные палитры desktop-Ninety", SettingsIcons.Theme),
-    AdaptiveSettingSection("routing", "Маршрутизация", "Регион, LAN, реклама и IPv6", SettingsIcons.Routing),
+    AdaptiveSettingSection("routing", "Маршрутизация", "Регион, LAN, реклама и пользовательские правила", SettingsIcons.Routing),
     AdaptiveSettingSection("dns", "DNS", "Remote/Direct DNS и Fake-DNS", SettingsIcons.Dns),
     AdaptiveSettingSection("inbound", "Локальный доступ", "MTU, TUN stack и strict route", SettingsIcons.Inbound),
     AdaptiveSettingSection("tls", "TLS-фрагментация", "ClientHello, padding и SNI", SettingsIcons.Tls),
@@ -364,6 +364,10 @@ private fun AdaptiveRoutingSettings() {
         AdaptiveSelectSetting("Маршрут IPv6", "Стратегия выбора IP", options.ipv6Mode, listOf("disable", "enable", "prefer", "only"), IPV6_LABELS_ADAPTIVE) {
             Options.update(context) { current -> current.copy(ipv6Mode = it) }
         }
+    }
+    SettingsGap()
+    RoutingRulesEditor(options.customRules) { rules ->
+        Options.update(context) { current -> current.copy(customRules = rules) }
     }
 }
 
