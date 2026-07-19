@@ -1,5 +1,7 @@
 package pw.x4.ninety.core.config
 
+import pw.x4.ninety.core.model.RoutingRule
+
 enum class Ipv6Mode(val wireName: String) {
     DISABLE("disable"),
     ENABLE("enable"),
@@ -30,6 +32,11 @@ enum class FragmentMode(val wireName: String) {
     }
 }
 
+enum class RoutingPlatform {
+    ANDROID,
+    DESKTOP,
+}
+
 /**
  * Platform-neutral subset of Ninety options used to build a sing-box config.
  * Android persistence and UI map into this immutable snapshot before every start/reload.
@@ -43,6 +50,8 @@ data class SingBoxOptions(
     val blockAds: Boolean = false,
     val bypassLan: Boolean = true,
     val ipv6Mode: Ipv6Mode = Ipv6Mode.DISABLE,
+    val customRules: List<RoutingRule> = emptyList(),
+    val routingPlatform: RoutingPlatform = RoutingPlatform.ANDROID,
     val dnsRemote: String = "https://1.1.1.1/dns-query",
     val dnsDirect: String = "udp://77.88.8.8",
     val fakeDns: Boolean = false,
