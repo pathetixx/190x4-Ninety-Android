@@ -13,8 +13,8 @@ import java.io.File
  * Хранилище профилей + нод (как desktop-Ninety). Профиль = подписка (много нод)
  * или одиночный конфиг (одна нода); каждая нода привязана к профилю через subId.
  * Активный профиль определяет, какие ноды видны в «Ноды» и в плитке Главной;
- * активная нода (activeId) — конкретный сервер для подключения (из активного
- * профиля). Persist: profiles.json + nodes.json, активные id — в Prefs.
+ * activeId хранит либо конкретную ноду, либо sentinel Auto.
+ * Persist: profiles.json + nodes.json, активные id — в Prefs.
  */
 object Store {
     private lateinit var nodesFile: File
@@ -78,11 +78,10 @@ object Store {
 
     // ── Активный выбор ──
     fun setActive(id: String) {
-        // Валидация вынесена в core:model. Значение сохраняем строкой для совместимости
-        // с существующими установками и Prefs.
-        ProxySelection.fromPersisted(id)
-        activeId = id
-        prefs.activeNodeId = id
+        // Не позволяем записать пустое/невалидное значение через публичный API.
+        val next = requireNotNull(ProxySelection.fromPersisted(id)) { "proxy selection must not be blank" }
+        activeId = next.persistedValue
+        prefs.activeNodeId = next.persistedValue
     }
 
     fun setActiveProfile(id: String) {
@@ -126,7 +125,7 @@ object Store {
         return true
     }
 
-    /** Refresh подписки: заменить ноды профиля, активную сохранить если осталась. */
+    /** Refresh подписки: заменить ноды профиля, активный выбор сохранить если он валиден. */
     fun refreshProfileNodes(id: String, content: String, info: SubUserinfo): Int {
         val parsed = LinkParser.parseSubscription(content)
         require(parsed.isNotEmpty()) { "Подписка пуста или не распознана" }
@@ -137,9 +136,19 @@ object Store {
             upsertProfile(p.copy(used = info.used, total = info.total, expire = info.expire,
                 updatedAt = System.currentTimeMillis()))
         }
-        if (activeProfileId == id && (activeId == null || nodes.none { it.id == activeId })) {
-            val first = nodesOf(id).firstOrNull()?.id
-            activeId = first; prefs.activeNodeId = first
+
+        if (activeProfileId == id) {
+            val current = selection
+            val keepCurrent = when (current) {
+                ProxySelection.Auto -> supportedActiveNodes().isNotEmpty()
+                is ProxySelection.Node -> nodes.any { it.id == current.nodeId && it.subId == id }
+                null -> false
+            }
+            if (!keepCurrent) {
+                val first = nodesOf(id).firstOrNull()?.id
+                activeId = first
+                prefs.activeNodeId = first
+            }
         }
         saveAll()
         return tagged.size
