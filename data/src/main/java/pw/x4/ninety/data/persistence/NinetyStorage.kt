@@ -9,7 +9,9 @@ import kotlinx.coroutines.sync.withLock
  * Room + DataStore gateway.
  *
  * Migration is deliberately two-phase: write and read back the Room graph, write and read back
- * DataStore, then set the marker. Legacy files remain untouched so a previous APK can roll back.
+ * DataStore, then set the marker. Legacy files remain untouched and are dual-written as a rollback
+ * journal. Because the app writes JSON before Room, a valid graph mismatch means Room did not
+ * finish the last commit and can safely be recovered from JSON.
  */
 class NinetyStorage private constructor(
     private val database: NinetyDatabase,
@@ -18,14 +20,15 @@ class NinetyStorage private constructor(
 ) {
     private val mutex = Mutex()
 
-    suspend fun initialize(legacy: StorageSnapshot): StorageLoadResult = mutex.withLock {
-        val legacySnapshot = legacy.normalized()
+    suspend fun initialize(legacy: LegacyStorageInput): StorageLoadResult = mutex.withLock {
+        val legacySnapshot = legacy.snapshot.normalized()
         val migrationVersion = preferences.migrationVersion()
         val currentPreferences = preferences.read()
         val databaseGraph = readGraph()
+        val legacyDiffers = legacy.graphPresent && !databaseGraph.matches(legacySnapshot)
 
         if (migrationVersion >= CURRENT_MIGRATION_VERSION) {
-            if (databaseGraph.isEmpty() && !legacySnapshot.isEmpty()) {
+            if (legacyDiffers) {
                 replaceGraphInternal(legacySnapshot.nodes, legacySnapshot.profiles)
                 val recovered = StorageSnapshot(
                     nodes = legacySnapshot.nodes,
@@ -51,12 +54,12 @@ class NinetyStorage private constructor(
             )
         }
 
-        val importedLegacy = databaseGraph.isEmpty() && !legacySnapshot.isEmpty()
-        val expectedGraph = if (databaseGraph.isEmpty()) {
+        val importLegacy = legacy.graphPresent && (databaseGraph.isEmpty() || legacyDiffers)
+        val expectedGraph = if (importLegacy) {
             replaceGraphInternal(legacySnapshot.nodes, legacySnapshot.profiles)
             Graph(legacySnapshot.nodes, legacySnapshot.profiles)
         } else {
-            // Crash recovery: Room transaction may have committed before DataStore marker.
+            // Crash recovery: Room may have committed before the DataStore marker.
             databaseGraph
         }
 
@@ -77,7 +80,7 @@ class NinetyStorage private constructor(
         StorageLoadResult(
             snapshot = readBack,
             source = when {
-                importedLegacy -> StorageSource.LEGACY_IMPORT
+                importLegacy -> StorageSource.LEGACY_IMPORT
                 readBack.isEmpty() -> StorageSource.EMPTY
                 else -> StorageSource.ROOM
             },
@@ -115,8 +118,8 @@ class NinetyStorage private constructor(
     }
 
     private suspend fun readGraph(): Graph = Graph(
-        nodes = database.nodeDao().readAll().map(mapper::fromEntity),
-        profiles = database.profileDao().readAll().map(mapper::fromEntity),
+        nodes = database.nodeDao().readAll().map { mapper.fromEntity(it) },
+        profiles = database.profileDao().readAll().map { mapper.fromEntity(it) },
     )
 
     private suspend fun replaceGraphInternal(
@@ -128,10 +131,10 @@ class NinetyStorage private constructor(
             database.nodeDao().deleteAll()
             database.profileDao().deleteAll()
             if (profiles.isNotEmpty()) {
-                database.profileDao().insertAll(profiles.map(mapper::toEntity))
+                database.profileDao().insertAll(profiles.map { mapper.toEntity(it) })
             }
             if (nodes.isNotEmpty()) {
-                database.nodeDao().insertAll(nodes.map(mapper::toEntity))
+                database.nodeDao().insertAll(nodes.map { mapper.toEntity(it) })
             }
         }
     }
@@ -166,6 +169,10 @@ class NinetyStorage private constructor(
         val profiles: List<PersistedProfile>,
     ) {
         fun isEmpty(): Boolean = nodes.isEmpty() && profiles.isEmpty()
+
+        fun matches(snapshot: StorageSnapshot): Boolean =
+            nodes.sortedBy { it.id } == snapshot.nodes.sortedBy { it.id } &&
+                profiles.sortedBy { it.id } == snapshot.profiles.sortedBy { it.id }
     }
 
     private fun StorageSnapshot.isEmpty(): Boolean = nodes.isEmpty() && profiles.isEmpty()
