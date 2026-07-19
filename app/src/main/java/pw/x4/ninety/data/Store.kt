@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.json.JSONArray
+import pw.x4.ninety.core.model.ProxySelection
 import java.io.File
 
 /**
@@ -44,11 +45,25 @@ object Store {
         set(v) { prefs.subscriptionUrl = v }
 
     /** Sentinel для активного id: автовыбор быстрейшего узла (urltest). */
-    const val AUTO_ID = "auto"
+    const val AUTO_ID = ProxySelection.AUTO_ID
+
+    /** Типизированный выбор: Auto больше не маскируется под отсутствующую ноду. */
+    val selection: ProxySelection?
+        get() = ProxySelection.fromPersisted(activeId)
 
     // ── Выборки ──
     fun activeNode(): Node? = nodes.firstOrNull { it.id == activeId }
-    val isAutoActive: Boolean get() = activeId == AUTO_ID
+    val isAutoActive: Boolean get() = selection == ProxySelection.Auto
+
+    /**
+     * Есть ли валидный выбор для запуска VPN.
+     * Auto валиден, если в активном профиле есть хотя бы одна поддерживаемая нода.
+     */
+    fun hasRunnableSelection(): Boolean = when (selection) {
+        ProxySelection.Auto -> supportedActiveNodes().isNotEmpty()
+        is ProxySelection.Node -> activeNode()?.supported == true
+        null -> false
+    }
 
     /** Подпись активного выбора для уведомления/UI: «Авто» либо имя узла. */
     fun activeNodeLabel(): String? = when {
@@ -63,6 +78,9 @@ object Store {
 
     // ── Активный выбор ──
     fun setActive(id: String) {
+        // Валидация вынесена в core:model. Значение сохраняем строкой для совместимости
+        // с существующими установками и Prefs.
+        ProxySelection.fromPersisted(id)
         activeId = id
         prefs.activeNodeId = id
     }
@@ -175,7 +193,6 @@ object Store {
     }
 
     // ── Персист + миграция ──
-
     private fun load() {
         val rawNodes = readNodes()
         if (profilesFile.exists()) {
