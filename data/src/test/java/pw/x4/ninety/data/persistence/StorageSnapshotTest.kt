@@ -2,7 +2,9 @@ package pw.x4.ninety.data.persistence
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import pw.x4.ninety.core.model.ProxySelection
 
 class StorageSnapshotTest {
@@ -52,6 +54,18 @@ class StorageSnapshotTest {
             ),
         ).normalized()
         assertNull(empty.preferences.activeNodeId)
+    }
+
+    @Test
+    fun `rollback journal accepts only the exact graph`() {
+        val nodes = "nodes-v1"
+        val profiles = "profiles-v1"
+        val manifest = RollbackJournal.create(nodes, profiles)
+
+        assertTrue(RollbackJournal.validates(manifest, nodes, profiles))
+        assertFalse(RollbackJournal.validates(manifest, "nodes-v2", profiles))
+        assertFalse(RollbackJournal.validates(manifest, nodes, "profiles-v2"))
+        assertFalse(RollbackJournal.validates("version=1", nodes, profiles))
     }
 
     private fun node(id: String, profileId: String) = PersistedNode(
