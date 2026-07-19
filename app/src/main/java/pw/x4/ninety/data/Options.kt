@@ -4,7 +4,14 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.util.UUID
+import org.json.JSONArray
 import org.json.JSONObject
+import pw.x4.ninety.core.model.DomainMatch
+import pw.x4.ninety.core.model.RoutingRule
+import pw.x4.ninety.core.model.RoutingRuleAction
+import pw.x4.ninety.core.model.RoutingRuleSanitizer
+import pw.x4.ninety.core.model.RoutingRuleType
 
 /**
  * Стор настроек ядра (порт desktop options.js → подмножество, реализуемое на Android).
@@ -12,7 +19,6 @@ import org.json.JSONObject
  * ⚠️ ВСЕ дефолты подобраны байт-в-байт под ТЕКУЩИЙ рабочий конфиг [ConfigBuilder]:
  * кто ничего не меняет — получает идентичный конфиг, проверенный на железе. Любая
  * опция влияет на JSON ТОЛЬКО при отклонении от дефолта (OFF/дефолт = как было).
- * WARP не включён — на Android M2 нет инфраструктуры регистрации WG-устройства.
  *
  * Реактивность: [data] — mutableState, Settings-UI перерисовывается; ConfigBuilder
  * читает плоский снимок [Data] при сборке/reload. Персист идёт через Preferences DataStore,
@@ -29,13 +35,14 @@ object Options {
         // — Маршрутизация —
         val region: String = "other",            // other|ru|cn|ir|tr|by
         val blockAds: Boolean = false,
-        val bypassLan: Boolean = true,           // текущий конфиг: ip_is_private → direct
+        val bypassLan: Boolean = true,
         val ipv6Mode: String = "disable",        // disable|enable|prefer|only
+        val customRules: List<RoutingRule> = emptyList(),
         // — DNS —
         val dnsRemote: String = "https://1.1.1.1/dns-query",
         val dnsDirect: String = "udp://77.88.8.8",
         val fakeDns: Boolean = false,
-        val independentCache: Boolean = false,   // текущий конфиг ключ не пишет → false
+        val independentCache: Boolean = false,
         // — Локальный доступ —
         val mtu: Int = 9000,
         val tunStack: String = "mixed",          // mixed|gvisor|system
@@ -67,9 +74,10 @@ object Options {
         loaded = true
     }
 
-    /** Транзакционное обновление: меняем поле(я) и сразу персистим. */
+    /** Транзакционное обновление: меняем поле(я), нормализуем правила и сразу персистим. */
     fun update(context: Context, transform: (Data) -> Data) {
-        val next = transform(data)
+        val transformed = transform(data)
+        val next = transformed.copy(customRules = transformed.customRules.mapNotNull(::sanitizeRule))
         data = next
         Prefs.get(context).optionsJson = toJson(next).toString()
     }
@@ -79,6 +87,7 @@ object Options {
         put("logLevel", d.logLevel); put("logDisabled", d.logDisabled)
         put("region", d.region); put("blockAds", d.blockAds)
         put("bypassLan", d.bypassLan); put("ipv6Mode", d.ipv6Mode)
+        put("customRules", JSONArray().apply { d.customRules.forEach { put(ruleToJson(it)) } })
         put("dnsRemote", d.dnsRemote); put("dnsDirect", d.dnsDirect)
         put("fakeDns", d.fakeDns); put("independentCache", d.independentCache)
         put("mtu", d.mtu); put("tunStack", d.tunStack); put("strictRoute", d.strictRoute)
@@ -100,6 +109,7 @@ object Options {
             blockAds = o.optBoolean("blockAds", def.blockAds),
             bypassLan = o.optBoolean("bypassLan", def.bypassLan),
             ipv6Mode = o.optString("ipv6Mode", def.ipv6Mode),
+            customRules = parseRules(o.optJSONArray("customRules")),
             dnsRemote = o.optString("dnsRemote", def.dnsRemote),
             dnsDirect = o.optString("dnsDirect", def.dnsDirect),
             fakeDns = o.optBoolean("fakeDns", def.fakeDns),
@@ -119,4 +129,48 @@ object Options {
             muxPadding = o.optBoolean("muxPadding", def.muxPadding),
         )
     }
+
+    private fun parseRules(array: JSONArray?): List<RoutingRule> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (index in 0 until minOf(array.length(), MAX_RULES)) {
+                val source = array.optJSONObject(index) ?: continue
+                val values = source.optJSONArray("values")?.let { rawValues ->
+                    buildList {
+                        for (valueIndex in 0 until minOf(rawValues.length(), MAX_VALUES_PER_RULE)) {
+                            rawValues.optString(valueIndex).takeIf(String::isNotBlank)?.let(::add)
+                        }
+                    }
+                }.orEmpty()
+                sanitizeRule(
+                    RoutingRule(
+                        id = source.optString("id").ifBlank { UUID.randomUUID().toString() },
+                        enabled = source.optBoolean("enabled", true),
+                        type = RoutingRuleType.fromWire(source.optString("type")),
+                        match = DomainMatch.fromWire(source.optString("match")),
+                        values = values,
+                        action = RoutingRuleAction.fromWire(source.optString("action")),
+                    ),
+                )?.let(::add)
+            }
+        }
+    }
+
+    private fun ruleToJson(rule: RoutingRule) = JSONObject().apply {
+        put("id", rule.id)
+        put("enabled", rule.enabled)
+        put("type", rule.type.wireName)
+        put("match", rule.match.wireName)
+        put("values", JSONArray(rule.values))
+        put("action", rule.action.wireName)
+    }
+
+    private fun sanitizeRule(rule: RoutingRule): RoutingRule? {
+        val withId = if (rule.id.isBlank()) rule.copy(id = UUID.randomUUID().toString()) else rule
+        val clean = RoutingRuleSanitizer.sanitize(withId).rule
+        return clean.takeIf { it.values.isNotEmpty() }
+    }
+
+    private const val MAX_RULES = 128
+    private const val MAX_VALUES_PER_RULE = 256
 }
