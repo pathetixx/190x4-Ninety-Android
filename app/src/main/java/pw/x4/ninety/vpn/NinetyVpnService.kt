@@ -11,6 +11,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.nekohasekai.libbox.CommandServer
@@ -39,6 +40,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import pw.x4.ninety.MainActivity
 import pw.x4.ninety.R
+import pw.x4.ninety.core.model.RoutingRuleType
 import pw.x4.ninety.core.runtime.VpnRuntimeCommand
 import pw.x4.ninety.core.runtime.VpnRuntimeTicket
 import pw.x4.ninety.data.Diag
@@ -331,6 +333,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     /** Android 8/9 use libbox procfs fallback; Android 10+ use the platform owner API below. */
     override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     override fun findConnectionOwner(
         ipProtocol: Int,
         sourceAddress: String,
@@ -338,17 +341,22 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         destinationAddress: String,
         destinationPort: Int,
     ): ConnectionOwner {
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "package routing requires Android 10 or newer"
-        }
         val uid = cm.getConnectionOwnerUid(
             ipProtocol,
             InetSocketAddress(sourceAddress, sourcePort),
             InetSocketAddress(destinationAddress, destinationPort),
         )
         check(uid != Process.INVALID_UID) { "android: connection owner not found" }
-        val ownerPackage = packageManager.getPackagesForUid(uid)?.firstOrNull().orEmpty()
+
+        val packages = packageManager.getPackagesForUid(uid).orEmpty()
+        val configuredPackages = Options.data.customRules.asSequence()
+            .filter { it.enabled && it.type == RoutingRuleType.ANDROID_PACKAGE }
+            .flatMap { it.values.asSequence() }
+            .toSet()
+        val ownerPackage = packages.firstOrNull(configuredPackages::contains)
+            ?: packages.firstOrNull().orEmpty()
         check(ownerPackage.isNotEmpty()) { "android: package for uid $uid not visible" }
+
         return ConnectionOwner().apply {
             setUserId(uid)
             setUserName(ownerPackage)
