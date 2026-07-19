@@ -23,3 +23,4 @@ rootProject.name = "Ninety"
 include(":app")
 include(":core:model")
 include(":core:parser")
+include(":core:config")
