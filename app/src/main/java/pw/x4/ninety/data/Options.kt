@@ -15,7 +15,8 @@ import org.json.JSONObject
  * WARP не включён — на Android M2 нет инфраструктуры регистрации WG-устройства.
  *
  * Реактивность: [data] — mutableState, Settings-UI перерисовывается; ConfigBuilder
- * читает плоский снимок [Data] при сборке/reload.
+ * читает плоский снимок [Data] при сборке/reload. Персист идёт через Preferences DataStore,
+ * а старый SharedPreferences JSON остаётся rollback-журналом на время миграции.
  */
 object Options {
 
@@ -60,10 +61,9 @@ object Options {
 
     fun load(context: Context) {
         if (loaded) return
-        val raw = context.applicationContext
-            .getSharedPreferences("ninety", Context.MODE_PRIVATE)
-            .getString(KEY, null)
-        if (raw != null) runCatching { data = fromJson(JSONObject(raw)) }
+        Prefs.get(context).optionsJson?.let { raw ->
+            runCatching { data = fromJson(JSONObject(raw)) }
+        }
         loaded = true
     }
 
@@ -71,12 +71,8 @@ object Options {
     fun update(context: Context, transform: (Data) -> Data) {
         val next = transform(data)
         data = next
-        context.applicationContext
-            .getSharedPreferences("ninety", Context.MODE_PRIVATE)
-            .edit().putString(KEY, toJson(next).toString()).apply()
+        Prefs.get(context).optionsJson = toJson(next).toString()
     }
-
-    private const val KEY = "options_json"
 
     private fun toJson(d: Data) = JSONObject().apply {
         put("testUrl", d.testUrl); put("testIntervalSec", d.testIntervalSec)
