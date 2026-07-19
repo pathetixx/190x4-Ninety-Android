@@ -87,6 +87,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:parser"))
 
     // Ядро VPN — libbox.aar (gomobile bind hiddify-sing-box), кладётся CI в app/libs/.
     // fileTree пустой локально (.gitignore) — pure Kotlin/Compose тесты не требуют ядра.
