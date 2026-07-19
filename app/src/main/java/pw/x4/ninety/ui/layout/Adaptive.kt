@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -73,6 +74,7 @@ fun NinetyPage(
         Box(
             Modifier
                 .fillMaxWidth()
+                .widthIn(max = metrics.maxContentWidth)
                 .padding(horizontal = metrics.pagePadding),
             content = content,
         )
