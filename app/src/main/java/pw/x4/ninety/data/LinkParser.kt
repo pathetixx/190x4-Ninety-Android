@@ -1,6 +1,6 @@
 package pw.x4.ninety.data
 
-import pw.x4.ninety.core.parser.ParsedProxy
+import pw.x4.ninety.core.model.ProxyNode
 import pw.x4.ninety.core.parser.ProxyLinkParser
 
 /**
@@ -13,10 +13,10 @@ object LinkParser {
     fun parseLink(raw: String): Node? = ProxyLinkParser.parseLink(raw)?.toNode()
 
     fun parseSubscription(content: String): List<Node> =
-        ProxyLinkParser.parseSubscription(content).map(ParsedProxy::toNode)
+        ProxyLinkParser.parseSubscription(content).map { it.toNode() }
 }
 
-private fun ParsedProxy.toNode(): Node = Node(
+private fun ProxyNode.toNode(): Node = Node(
     proto = protocol.wireName,
     name = name,
     host = host,
