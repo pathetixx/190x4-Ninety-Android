@@ -81,7 +81,7 @@ fun NinetyApp(onToggleVpn: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink.Ink0)) {
         val metrics = layoutMetrics(maxWidth)
         if (metrics.windowClass == NinetyWindowClass.Compact) {
-            CompactShell(metrics, dest, onSelect = { dest = it }) {
+            CompactShell(dest, onSelect = { dest = it }) {
                 ScreenHost(metrics, dest, onToggleVpn, onNavigate = { dest = it })
             }
         } else {
@@ -98,7 +98,6 @@ fun NinetyApp(onToggleVpn: () -> Unit) {
 
 @Composable
 private fun CompactShell(
-    metrics: NinetyLayoutMetrics,
     current: Dest,
     onSelect: (Dest) -> Unit,
     content: @Composable () -> Unit,
