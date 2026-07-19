@@ -84,11 +84,62 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Unit tests, lint and debug APK
-        run: gradle :core:model:test :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+      # Каждая проверка пишет отдельный лог и не обрывает job: так последующий
+      # artifact содержит точную ошибку даже при падении компиляции или lint.
+      - name: Core model tests
+        id: core_tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :core:model:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
+
+      - name: Assemble debug APK
+        id: assemble_debug
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee ci-assemble-debug.log
+
+      - name: Android lint
+        id: lint_debug
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:lintDebug --no-daemon --stacktrace 2>&1 | tee ci-lint-debug.log
+
+      - name: Upload PR verification diagnostics
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-ci-diagnostics-${{ github.event.pull_request.number }}
+          if-no-files-found: warn
+          path: |
+            ci-*.log
+            core/model/build/reports/tests/**
+            app/build/reports/lint-results-debug.*
+            app/build/reports/lint-results-debug/**
+
+      - name: Fail when verification failed
+        if: always()
+        env:
+          CORE_TESTS: ${{ steps.core_tests.outcome }}
+          ASSEMBLE_DEBUG: ${{ steps.assemble_debug.outcome }}
+          LINT_DEBUG: ${{ steps.lint_debug.outcome }}
+        run: |
+          echo "core tests:     $CORE_TESTS"
+          echo "assemble debug: $ASSEMBLE_DEBUG"
+          echo "lint debug:     $LINT_DEBUG"
+          if [ "$CORE_TESTS" != "success" ] || [ "$ASSEMBLE_DEBUG" != "success" ] || [ "$LINT_DEBUG" != "success" ]; then
+            exit 1
+          fi
 
       - name: Upload PR debug APKs
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.assemble_debug.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: ninety-android-debug-${{ github.event.pull_request.number }}
