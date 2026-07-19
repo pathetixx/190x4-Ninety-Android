@@ -90,6 +90,24 @@ Golden tests фиксируют:
 
 Подробный контракт описан в `docs/CONFIG_PORT.md`.
 
+## Реализованный data boundary
+
+`:data` владеет:
+
+- Room database `ninety.db` со schema v1;
+- таблицами `profiles` и `nodes`;
+- foreign key `nodes.profileId -> profiles.id` с cascade delete;
+- Preferences DataStore для настроек и активного выбора;
+- AES/GCM codec на Android Keystore;
+- транзакционным gateway с обязательным read-back verification;
+- migration marker, который ставится только после проверки Room и DataStore.
+
+Синхронные Android facade `Store`, `Prefs` и `Options` пока сохранены, чтобы не переписывать UI и VPN одновременно. Они используют проверенный modern snapshot, а изменения dual-write в legacy rollback journal и новый store.
+
+Rollback journal состоит из atomic JSON-файлов и checksum-манифеста. Неполная или повреждённая файловая запись не считается источником восстановления Room. Старые файлы пока не удаляются; cleanup разрешён только после upgrade smoke-test на реальном устройстве.
+
+Полный протокол описан в `docs/DATA_MIGRATION.md`.
+
 ## Platform capabilities
 
 UI и config builder обязаны принимать `PlatformCapabilities`, а не проверять платформу строками или скрытыми условиями.
@@ -119,18 +137,6 @@ PermissionRevoked
 
 Одновременно выполняется только одна команда. Каждая долгая операция получает generation token; устаревший результат не может изменить новое состояние.
 
-## Persist
-
-Переход выполняется без потери текущих установок:
-
-1. прочитать legacy `nodes.json`, `profiles.json`, SharedPreferences;
-2. нормализовать данные текущим parser;
-3. записать в Room транзакцией;
-4. сохранить migration marker;
-5. legacy-файлы удалить только после успешной проверки новой базы.
-
-Секретные поля и subscription URL не должны храниться в открытом backup.
-
 ## Проверки до merge
 
 Минимальный gate:
@@ -139,18 +145,19 @@ PermissionRevoked
 :core:model:test
 :core:parser:test
 :core:config:test
+:data:testDebugUnitTest
 :app:lintDebug
 :app:assembleDebug
 ```
 
-Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety.
+Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback.
 
 ## Этапы
 
 1. ✅ Foundation: `core:model`, capability matrix, design tokens, CI.
 2. ✅ Parser: нормализованные DTO, Android adapter и fixtures desktop/Android.
 3. ✅ Config: pure Kotlin builder, typed options, shared fixtures и golden JSON.
-4. Следующий — Data: Room/DataStore + безопасная legacy migration.
-5. Runtime: сериализованный VPN lifecycle и StateFlow.
+4. ✅ Data: Room/DataStore, encrypted secrets, verified legacy migration и rollback journal.
+5. Следующий — Runtime: сериализованный VPN lifecycle и StateFlow.
 6. UI: responsive desktop design language в Compose.
 7. Advanced: custom routing, quality engine, WARP.
