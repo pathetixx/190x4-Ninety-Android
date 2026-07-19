@@ -2,6 +2,7 @@ package pw.x4.ninety.ui.layout
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -65,6 +66,7 @@ fun NinetyPage(
     Box(modifier.fillMaxSize(), contentAlignment = contentAlignment) {
         Box(
             Modifier
+                .fillMaxHeight()
                 .fillMaxWidth()
                 .widthIn(max = metrics.maxContentWidth)
                 .padding(horizontal = metrics.pagePadding),
