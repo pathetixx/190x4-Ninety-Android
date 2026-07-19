@@ -7,8 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import pw.x4.ninety.core.model.ProxySelection
+import pw.x4.ninety.data.persistence.RollbackJournal
 import pw.x4.ninety.data.persistence.StorageSnapshot
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 /**
  * Compatibility store for existing Compose and VPN callers.
@@ -19,6 +24,7 @@ import java.io.File
 object Store {
     private lateinit var nodesFile: File
     private lateinit var profilesFile: File
+    private lateinit var journalFile: File
     private lateinit var prefs: Prefs
 
     val nodes = mutableStateListOf<Node>()
@@ -34,6 +40,7 @@ object Store {
         val app = context.applicationContext
         nodesFile = File(app.filesDir, "nodes.json")
         profilesFile = File(app.filesDir, "profiles.json")
+        journalFile = File(app.filesDir, "storage-journal.v1")
         prefs = Prefs.get(app)
 
         nodes.clear()
@@ -231,14 +238,30 @@ object Store {
         saveAll()
     }
 
-    /** JSON first = rollback journal; Room second = encrypted source of truth. */
+    /** JSON files + checksum first; Room second. A partial journal is rejected on startup. */
     private fun saveAll() {
+        val nodesJson = JSONArray().apply { nodes.forEach { put(it.toJson()) } }.toString()
+        val profilesJson = JSONArray().apply { profiles.forEach { put(it.toJson()) } }.toString()
         runCatching {
-            nodesFile.writeText(JSONArray().apply { nodes.forEach { put(it.toJson()) } }.toString())
-            profilesFile.writeText(JSONArray().apply { profiles.forEach { put(it.toJson()) } }.toString())
+            writeAtomically(nodesFile, nodesJson)
+            writeAtomically(profilesFile, profilesJson)
+            writeAtomically(journalFile, RollbackJournal.create(nodesJson, profilesJson))
         }.getOrElse { throw IllegalStateException("failed to write legacy rollback journal", it) }
 
         PersistenceRuntime.persistGraph(nodes.toList(), profiles.toList())
+    }
+
+    private fun writeAtomically(target: File, content: String) {
+        val temp = File(target.parentFile, ".${target.name}.tmp")
+        FileOutputStream(temp).use { output ->
+            output.write(content.toByteArray(Charsets.UTF_8))
+            output.fd.sync()
+        }
+        runCatching {
+            Files.move(temp.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+        }.recoverCatching {
+            Files.move(temp.toPath(), target.toPath(), REPLACE_EXISTING)
+        }.getOrThrow()
     }
 
     private fun hostOf(url: String): String? = runCatching {
