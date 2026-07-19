@@ -40,10 +40,10 @@ fun layoutMetrics(width: Dp): NinetyLayoutMetrics = when {
         navigationWidth = 0.dp,
     )
 
-    width < 960.dp -> NinetyLayoutMetrics(
+    width < 1100.dp -> NinetyLayoutMetrics(
         windowClass = NinetyWindowClass.Medium,
         pagePadding = 24.dp,
-        maxContentWidth = 820.dp,
+        maxContentWidth = 920.dp,
         navigationWidth = 84.dp,
     )
 
@@ -67,8 +67,8 @@ fun NinetyPage(
         Box(
             Modifier
                 .fillMaxHeight()
-                .fillMaxWidth()
                 .widthIn(max = metrics.maxContentWidth)
+                .fillMaxWidth()
                 .padding(horizontal = metrics.pagePadding),
             content = content,
         )
