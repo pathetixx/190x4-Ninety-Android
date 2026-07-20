@@ -61,10 +61,12 @@ object WarpRuntime {
     }
 
     fun configForBuild(options: Options.Data): WarpConfig? {
-        val current = registration ?: return null
+        if (!options.warpEnabled) return null
+        val current = registration
+            ?: throw IllegalStateException("WARP включён, но регистрация отсутствует")
         return WarpConfig(
             settings = WarpSettings(
-                enabled = options.warpEnabled,
+                enabled = true,
                 mode = WarpMode.fromWire(options.warpMode),
                 endpoint = options.warpEndpoint,
                 mtu = options.warpMtu,
