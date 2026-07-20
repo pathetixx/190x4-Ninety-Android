@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.core.model.WarpRegistrationSanitizer
 import pw.x4.ninety.data.Options
@@ -47,6 +50,13 @@ fun WarpSettingsPane() {
     val options = Options.data
     var license by remember { mutableStateOf("") }
     var licenseError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(status.registered) {
+        if (status.registered) {
+            license = ""
+            licenseError = null
+        }
+    }
 
     SurfaceCard {
         Text("CLOUDFLARE · WARP", style = KickerStyle, color = NinetyState.pack.accentBright)
@@ -88,6 +98,7 @@ fun WarpSettingsPane() {
             WarpTextField(
                 value = license,
                 placeholder = "WARP+ license — необязательно",
+                secret = true,
                 onValueChange = {
                     license = it.filterNot(Char::isWhitespace)
                     licenseError = null
@@ -219,7 +230,12 @@ private fun WarpChoice(text: String, selected: Boolean, modifier: Modifier = Mod
 }
 
 @Composable
-private fun WarpTextField(value: String, placeholder: String, onValueChange: (String) -> Unit) {
+private fun WarpTextField(
+    value: String,
+    placeholder: String,
+    secret: Boolean = false,
+    onValueChange: (String) -> Unit,
+) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -232,6 +248,7 @@ private fun WarpTextField(value: String, placeholder: String, onValueChange: (St
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             textStyle = MonoStyle.copy(color = Ink.TextHi),
             cursorBrush = SolidColor(NinetyState.pack.accent),
             modifier = Modifier.fillMaxWidth(),
