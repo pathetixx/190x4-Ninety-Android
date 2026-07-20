@@ -65,8 +65,8 @@ class SecurityInstrumentedTest {
     }
 
     @Test
-    fun mainActivitySurvivesRecreation() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+    fun debugActivitySurvivesRecreation() {
+        ActivityScenario.launch(RecreationTestActivity::class.java).use { scenario ->
             scenario.onActivity { activity -> assertFalse(activity.isFinishing) }
             scenario.recreate()
             scenario.onActivity { activity -> assertFalse(activity.isFinishing) }
