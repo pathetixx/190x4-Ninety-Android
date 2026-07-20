@@ -2,7 +2,6 @@ package pw.x4.ninety.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,16 +21,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -169,7 +171,7 @@ private fun DesktopSidebar(
     ) {
         DesktopBrand(expanded)
         SidebarStateStrip(expanded)
-        Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().selectableGroup()) {
             Dest.entries.forEach { destination ->
                 DesktopNavRow(
                     destination = destination,
@@ -265,10 +267,13 @@ private fun DesktopNavRow(
             .height(if (expanded) 66.dp else 58.dp)
             .clip(shape)
             .desktopNavRow(active, shape)
-            .clickable(
+            .selectable(
+                selected = active,
+                role = Role.Tab,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { onClick() }
+                onClick = onClick,
+            )
             .padding(start = if (expanded) 26.dp else 0.dp, end = if (expanded) 12.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
@@ -371,7 +376,8 @@ private fun CompactBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
             .fillMaxWidth()
             .desktopCard(shape = RoundedCornerShape(0.dp))
             .navigationBarsPadding()
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .padding(horizontal = 8.dp, vertical = 7.dp)
+            .selectableGroup(),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         Dest.entries.forEach { destination ->
@@ -386,7 +392,11 @@ private fun CompactBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
                         if (active) NinetyState.pack.material.border else Color.Transparent,
                         RoundedCornerShape(NinetyRadius.sm),
                     )
-                    .clickable { onSelect(destination) }
+                    .selectable(
+                        selected = active,
+                        role = Role.Tab,
+                        onClick = { onSelect(destination) },
+                    )
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
