@@ -69,6 +69,7 @@ data class PreferenceSnapshot(
     val skippedVersion: String? = null,
     val lastSeenVersionCode: Int = 0,
     val optionsJson: String? = null,
+    val qualityJson: String? = null,
 )
 
 data class StorageSnapshot(
