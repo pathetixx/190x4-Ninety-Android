@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** Product breakpoints shared by the shell and every screen. */
 enum class NinetyWindowClass {
     Compact,
     Medium,
@@ -39,23 +38,20 @@ fun layoutMetrics(width: Dp): NinetyLayoutMetrics = when {
         maxContentWidth = 720.dp,
         navigationWidth = 0.dp,
     )
-
     width < 1100.dp -> NinetyLayoutMetrics(
         windowClass = NinetyWindowClass.Medium,
-        pagePadding = 24.dp,
-        maxContentWidth = 920.dp,
-        navigationWidth = 84.dp,
+        pagePadding = 22.dp,
+        maxContentWidth = 960.dp,
+        navigationWidth = 76.dp,
     )
-
     else -> NinetyLayoutMetrics(
         windowClass = NinetyWindowClass.Expanded,
-        pagePadding = 32.dp,
-        maxContentWidth = 1180.dp,
-        navigationWidth = 236.dp,
+        pagePadding = 28.dp,
+        maxContentWidth = 1280.dp,
+        navigationWidth = 292.dp,
     )
 }
 
-/** Centers content on large tablets/desktop windows while preserving edge-to-edge backgrounds. */
 @Composable
 fun NinetyPage(
     metrics: NinetyLayoutMetrics,
@@ -65,11 +61,8 @@ fun NinetyPage(
 ) {
     Box(modifier.fillMaxSize(), contentAlignment = contentAlignment) {
         Box(
-            Modifier
-                .fillMaxHeight()
-                .widthIn(max = metrics.maxContentWidth)
-                .fillMaxWidth()
-                .padding(horizontal = metrics.pagePadding),
+            Modifier.fillMaxHeight().widthIn(max = metrics.maxContentWidth)
+                .fillMaxWidth().padding(horizontal = metrics.pagePadding),
             content = content,
         )
     }
