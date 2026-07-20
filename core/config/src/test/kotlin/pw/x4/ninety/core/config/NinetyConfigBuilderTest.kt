@@ -1,5 +1,6 @@
 package pw.x4.ninety.core.config
 
+import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -13,6 +14,11 @@ import pw.x4.ninety.core.model.ProxySelection
 import pw.x4.ninety.core.model.RoutingRule
 import pw.x4.ninety.core.model.RoutingRuleAction
 import pw.x4.ninety.core.model.RoutingRuleType
+import pw.x4.ninety.core.model.WarpMode
+import pw.x4.ninety.core.model.WarpNoisePreset
+import pw.x4.ninety.core.model.WarpRange
+import pw.x4.ninety.core.model.WarpRegistration
+import pw.x4.ninety.core.model.WarpSettings
 import pw.x4.ninety.core.parser.ProxyFixtures
 import pw.x4.ninety.core.parser.ProxyLinkParser
 
@@ -115,8 +121,86 @@ class NinetyConfigBuilderTest {
     }
 
     @Test
-    fun `custom routing decoration remains byte deterministic`() {
+    fun `WARP direct becomes protected final DNS and custom proxy target`() {
+        val root = json.parseToJsonElement(
+            NinetyConfigBuilder.build(
+                listOf(configNode()),
+                options = SingBoxOptions(
+                    warp = warpConfig(WarpMode.DIRECT),
+                    customRules = listOf(
+                        RoutingRule("protected", type = RoutingRuleType.DOMAIN, values = listOf("example.com")),
+                    ),
+                ),
+            ),
+        ).jsonObject
+        val endpoint = root.getValue("endpoints").jsonArray.single().jsonObject
+        val route = root.getValue("route").jsonObject
+        val dnsRemote = root.getValue("dns").jsonObject.getValue("servers").jsonArray
+            .map { it.jsonObject }
+            .first { it.getValue("tag").jsonPrimitive.content == "dns-remote" }
+        val protectedRule = route.getValue("rules").jsonArray[2].jsonObject
+
+        assertEquals("wireguard", endpoint.getValue("type").jsonPrimitive.content)
+        assertEquals("warp", endpoint.getValue("tag").jsonPrimitive.content)
+        assertFalse(endpoint.containsKey("detour"))
+        assertEquals("warp", route.getValue("final").jsonPrimitive.content)
+        assertEquals("warp", dnsRemote.getValue("detour").jsonPrimitive.content)
+        assertEquals("warp", protectedRule.getValue("outbound").jsonPrimitive.content)
+        assertEquals(listOf(1, 2, 255), endpoint.getValue("peers").jsonArray.single().jsonObject
+            .getValue("reserved").jsonArray.map { it.jsonPrimitive.content.toInt() })
+    }
+
+    @Test
+    fun `WARP chain detours through selector and emits custom noise`() {
+        val endpoint = json.parseToJsonElement(
+            NinetyConfigBuilder.build(
+                listOf(configNode()),
+                options = SingBoxOptions(
+                    warp = warpConfig(WarpMode.CHAIN).copy(
+                        settings = WarpSettings(
+                            enabled = true,
+                            mode = WarpMode.CHAIN,
+                            endpoint = "[2606:4700:d0::a29f:c001]:500",
+                            mtu = 1400,
+                            noisePreset = WarpNoisePreset.CUSTOM,
+                            customCount = WarpRange(5, 2),
+                            customSize = WarpRange(20, 40),
+                            customDelay = WarpRange(1, 9),
+                        ),
+                    ),
+                ),
+            ),
+        ).jsonObject.getValue("endpoints").jsonArray.single().jsonObject
+
+        assertEquals("proxy", endpoint.getValue("detour").jsonPrimitive.content)
+        assertEquals(1400, endpoint.getValue("mtu").jsonPrimitive.content.toInt())
+        val peer = endpoint.getValue("peers").jsonArray.single().jsonObject
+        assertEquals("2606:4700:d0::a29f:c001", peer.getValue("address").jsonPrimitive.content)
+        assertEquals(500, peer.getValue("port").jsonPrimitive.content.toInt())
+        val fakePacket = endpoint.getValue("noise").jsonObject.getValue("fake_packet").jsonObject
+        assertEquals("2-5", fakePacket.getValue("count").jsonPrimitive.content)
+        assertEquals("20-40", fakePacket.getValue("size").jsonPrimitive.content)
+        assertEquals("1-9", fakePacket.getValue("delay").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `invalid WARP registration is omitted without changing default config`() {
+        val base = SingBoxConfigBuilder.build(listOf(configNode()))
+        val invalid = warpConfig(WarpMode.DIRECT).copy(
+            registration = registration().copy(privateKey = "invalid"),
+        )
+        val actual = NinetyConfigBuilder.build(
+            listOf(configNode()),
+            options = SingBoxOptions(warp = invalid),
+        )
+
+        assertEquals(base, actual)
+    }
+
+    @Test
+    fun `custom routing and WARP decoration remain byte deterministic`() {
         val options = SingBoxOptions(
+            warp = warpConfig(WarpMode.DIRECT),
             customRules = listOf(
                 RoutingRule("one", type = RoutingRuleType.DOMAIN, values = listOf("example.com")),
             ),
@@ -125,6 +209,23 @@ class NinetyConfigBuilderTest {
         val second = NinetyConfigBuilder.build(listOf(configNode()), options = options)
         assertEquals(first, second)
     }
+
+    private fun warpConfig(mode: WarpMode) = WarpConfig(
+        settings = WarpSettings(enabled = true, mode = mode),
+        registration = registration(),
+    )
+
+    private fun registration() = WarpRegistration(
+        registrationId = "registration-id",
+        accountId = "account-id",
+        accessToken = "token",
+        privateKey = Base64.getEncoder().encodeToString(ByteArray(32) { 1 }),
+        peerPublicKey = Base64.getEncoder().encodeToString(ByteArray(32) { 2 }),
+        localIpv4 = "172.16.0.2",
+        localIpv6 = "2606:4700:110:8765::2",
+        clientId = Base64.getEncoder().encodeToString(byteArrayOf(1, 2, -1)),
+        registeredAt = "2026-07-20T00:00:00Z",
+    )
 
     private fun configNode(): ConfigNode {
         val fixture = ProxyFixtures.all.first { it.id == "vless" }
