@@ -30,6 +30,7 @@ import androidx.core.content.FileProvider
 import pw.x4.ninety.BuildConfig
 import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Updater
+import pw.x4.ninety.ui.components.DesktopConfirmDialog
 import pw.x4.ninety.ui.components.PillButton
 import pw.x4.ninety.ui.components.SurfaceCard
 import pw.x4.ninety.ui.theme.Ink
@@ -42,6 +43,7 @@ import pw.x4.ninety.ui.theme.NinetyTypography
 internal fun DesktopLogsSettings() {
     val context = LocalContext.current
     var refreshKey by remember { mutableStateOf(0) }
+    var confirmClear by remember { mutableStateOf(false) }
     val crash = remember(refreshKey) { Diag.lastCrash(context) }
     val stderr = remember(refreshKey) { Diag.boxStderr(context) }
     val run = remember(refreshKey) { Diag.boxRun(context) }
@@ -59,13 +61,7 @@ internal fun DesktopLogsSettings() {
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { PillButton("Поделиться") { shareDesktopDiagnostics(context) } }
-            Box(Modifier.weight(1f)) {
-                PillButton("Очистить") {
-                    Diag.clear(context)
-                    refreshKey++
-                    desktopSettingsToast(context, "Логи очищены")
-                }
-            }
+            Box(Modifier.weight(1f)) { PillButton("Очистить") { confirmClear = true } }
         }
     }
     DesktopSettingsGap()
@@ -76,6 +72,22 @@ internal fun DesktopLogsSettings() {
     DesktopDiagnosticCard("ЛОГ SING-BOX", run)
     DesktopSettingsGap()
     DesktopDiagnosticCard("LOGCAT SNAPSHOT", logcat)
+
+    if (confirmClear) {
+        DesktopConfirmDialog(
+            kicker = "Diagnostics · Clear",
+            title = "Очистить все логи?",
+            message = "Будут удалены crash, stderr, sing-box и logcat snapshots. Сначала сохраните отчёт, если он нужен для диагностики.",
+            confirmLabel = "Очистить",
+            destructive = true,
+            onDismiss = { confirmClear = false },
+            onConfirm = {
+                Diag.clear(context)
+                refreshKey++
+                desktopSettingsToast(context, "Логи очищены")
+            },
+        )
+    }
 }
 
 @Composable
