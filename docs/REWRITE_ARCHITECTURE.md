@@ -27,6 +27,9 @@
 :core:runtime
   VPN commands, phases, generation-safe transitions
 
+:core:quality
+  bounded history, health scoring, cooldown and stable Auto policy
+
 :data
   Room, DataStore, migrations, encrypted secrets
 
@@ -43,6 +46,7 @@
 app -> data -> core:model
 app -> core:parser -> core:model
 app -> core:runtime
+app -> core:quality
 app -> vpn:libbox -> core:config -> core:model
 core:config tests -> core:parser test fixtures
 ```
@@ -101,7 +105,7 @@ Golden tests фиксируют:
 - Room database `ninety.db` со schema v1;
 - таблицами `profiles` и `nodes`;
 - foreign key `nodes.profileId -> profiles.id` с cascade delete;
-- Preferences DataStore для настроек и активного выбора;
+- Preferences DataStore для настроек, активного выбора и bounded quality history;
 - AES/GCM codec на Android Keystore;
 - транзакционным gateway с обязательным read-back verification;
 - migration marker, который ставится только после проверки Room и DataStore.
@@ -171,6 +175,28 @@ Adaptive shell владеет safe-drawing insets и навигацией. Гл�
 
 Редактор находится в `Настройки → Маршрутизация`, сохраняет правила через существующий `Options` DataStore path и поддерживает add/edit/delete, reorder и toggle. Полный контракт и smoke matrix описаны в `docs/CUSTOM_ROUTING.md`.
 
+## Реализованный Quality Engine boundary
+
+`:core:quality` принимает завершённый batch задержек, текущую effective node, монотонно переданное время и immutable `QualityPolicy`. Модуль не знает об Android, libbox, Compose или DataStore.
+
+Policy хранит bounded history и вычисляет:
+
+- median latency;
+- p90 jitter;
+- success rate;
+- consecutive failures;
+- exponential cooldown;
+- health score `0..100`;
+- стабильную recommendation с min dwell и switch margin.
+
+Первый batch закрепляет текущую effective node libbox как incumbent. Challenger переключает Auto только после достаточной истории, dwell и материального преимущества. Недоступный incumbent заменяется лучшей доступной нодой без ожидания dwell.
+
+`ClashMonitor` остаётся источником измерений. `QualityRuntime` хранит независимую историю по profile id в versioned `quality_json`, отбрасывает удалённые ноды, не применяет stale recommendation и просит generation-safe reload только при реальном изменении решения.
+
+Пользовательский `ProxySelection.Auto` не заменяется в persistence. На runtime config boundary Auto временно разрешается в конкретную рекомендованную ноду; ручной выбор никогда не меняется Quality Engine.
+
+Экран Ноды показывает последний raw ping отдельно от Q-score, success rate и jitter. Полный scoring contract и device matrix описаны в `docs/QUALITY_ENGINE.md`.
+
 ## Platform capabilities
 
 UI и config builder обязаны принимать `PlatformCapabilities`, а не проверять платформу строками или скрытыми условиями.
@@ -180,6 +206,7 @@ Android:
 - TUN: да;
 - per-app routing: Android 10+ через connection owner API;
 - domain/IP custom routing: да;
+- stable quality Auto: да;
 - Always-on/lockdown: через систему Android;
 - system proxy: нет;
 - WFP kill switch: нет;
@@ -196,12 +223,13 @@ Android:
 :core:parser:test
 :core:config:test
 :core:runtime:test
+:core:quality:test
 :data:testDebugUnitTest
 :app:lintDebug
 :app:assembleDebug
 ```
 
-Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback. Для runtime обязательны тесты stale completion/failure и реальный smoke-test start/stop/reload/revoke. Для UI обязательна проверка Compact/Medium/Expanded, font scale, тёмной/светлой темы и реальных VPN/import/diagnostics сценариев. Для custom routing обязательны device-проверки первого совпадения, domain/IP actions, package routing Android 10+, persistence и reload активного туннеля.
+Для config builder обязательны golden tests на тех же fixtures, что используются parser-слоем и desktop-Ninety. Для Room обязательны закоммиченные schema JSON и явные migrations без destructive fallback. Для runtime обязательны тесты stale completion/failure и реальный smoke-test start/stop/reload/revoke. Для UI обязательна проверка Compact/Medium/Expanded, font scale, тёмной/светлой темы и реальных VPN/import/diagnostics сценариев. Для custom routing обязательны device-проверки первого совпадения, domain/IP actions, package routing Android 10+, persistence и reload активного туннеля. Для Quality Engine обязательны проверки отсутствия флаппинга, dwell/margin, failure cooldown, stale history, ручного выбора и изоляции профилей.
 
 ## Этапы
 
@@ -212,5 +240,5 @@ Android:
 5. ✅ Runtime: сериализованная command queue, generation safety и `StateFlow`.
 6. ✅ UI: responsive shell, Главная, Профили, Ноды и master-detail Настройки.
 7. ✅ Advanced / Custom routing: typed rules, sanitizer, editor, deterministic config и Android package owner.
-8. Следующий — Advanced / Quality engine: health scoring и устойчивый Auto.
-9. Затем — Advanced / WARP integration.
+8. ✅ Advanced / Quality engine: bounded history, health score, cooldown и устойчивый Auto.
+9. Следующий — Advanced / WARP integration.
