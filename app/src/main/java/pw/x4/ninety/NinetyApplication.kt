@@ -9,6 +9,7 @@ import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.packById
+import pw.x4.ninety.vpn.QualityRuntime
 import pw.x4.ninety.vpn.VpnController
 import pw.x4.ninety.vpn.WarpRuntime
 
@@ -35,6 +36,7 @@ class NinetyApplication : Application() {
             prefs.lastSeenVersionCode = BuildConfig.VERSION_CODE
         }
         Options.load(this)
+        QualityRuntime.initialize(this)
         WarpRuntime.initialize(this)
         VpnController.appContext = this
     }
