@@ -36,17 +36,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.BuildConfig
+import pw.x4.ninety.R
 import pw.x4.ninety.data.Fmt
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.data.Updater
+import pw.x4.ninety.ui.components.DesktopActiveNavShape
+import pw.x4.ninety.ui.components.DesktopBackdrop
+import pw.x4.ninety.ui.components.DesktopRowShape
 import pw.x4.ninety.ui.components.UpdateModal
+import pw.x4.ninety.ui.components.desktopCard
+import pw.x4.ninety.ui.components.desktopNavRow
+import pw.x4.ninety.ui.components.desktopSidebar
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.layout.NinetyLayoutMetrics
 import pw.x4.ninety.ui.layout.NinetyWindowClass
@@ -58,6 +66,7 @@ import pw.x4.ninety.ui.screens.SettingsScreen
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
 import pw.x4.ninety.ui.theme.MonoStyle
+import pw.x4.ninety.ui.theme.NinetyRadius
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
 import pw.x4.ninety.vpn.ClashMonitor
@@ -76,27 +85,22 @@ private enum class Dest(val label: String, val kicker: String, val icon: ImageVe
 fun NinetyApp(onToggleVpn: () -> Unit) {
     var dest by rememberSaveable { mutableStateOf(Dest.Home) }
 
-    BoxWithConstraints(
-        Modifier.fillMaxSize().background(
-            Brush.radialGradient(
-                colors = listOf(NinetyState.pack.accentSoft.copy(alpha = 0.32f), Ink.Ink0, Ink.Ink0),
-                radius = 1300f,
-            ),
-        ),
-    ) {
-        val metrics = layoutMetrics(maxWidth)
-        if (metrics.windowClass == NinetyWindowClass.Compact) {
-            CompactShell(dest, onSelect = { dest = it }) {
-                ScreenHost(metrics, dest, onToggleVpn, onNavigate = { dest = it })
+    DesktopBackdrop {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val metrics = layoutMetrics(maxWidth)
+            if (metrics.windowClass == NinetyWindowClass.Compact) {
+                CompactShell(dest, onSelect = { dest = it }) {
+                    ScreenHost(metrics, dest, onToggleVpn, onNavigate = { dest = it })
+                }
+            } else {
+                DesktopShell(metrics, dest, onSelect = { dest = it }) {
+                    ScreenHost(metrics, dest, onToggleVpn, onNavigate = { dest = it })
+                }
             }
-        } else {
-            DesktopShell(metrics, dest, onSelect = { dest = it }) {
-                ScreenHost(metrics, dest, onToggleVpn, onNavigate = { dest = it })
-            }
-        }
 
-        Updater.Available.release?.let { release ->
-            UpdateModal(release, onDismiss = { Updater.Available.release = null })
+            Updater.Available.release?.let { release ->
+                UpdateModal(release, onDismiss = { Updater.Available.release = null })
+            }
         }
     }
 }
@@ -157,16 +161,10 @@ private fun DesktopSidebar(
 ) {
     val expanded = metrics.windowClass == NinetyWindowClass.Expanded
     Column(
-        Modifier.width(metrics.navigationWidth).fillMaxHeight()
-            .background(
-                Brush.verticalGradient(
-                    0f to Ink.Ink2,
-                    0.26f to Ink.Ink1,
-                    0.72f to Ink.Ink0,
-                    1f to NinetyState.pack.accentSoft.copy(alpha = 0.22f),
-                ),
-            )
-            .border(1.dp, Ink.Line2),
+        Modifier
+            .width(metrics.navigationWidth)
+            .fillMaxHeight()
+            .desktopSidebar(),
     ) {
         DesktopBrand(expanded)
         SidebarStateStrip(expanded)
@@ -188,32 +186,43 @@ private fun DesktopSidebar(
 @Composable
 private fun DesktopBrand(expanded: Boolean) {
     Row(
-        Modifier.fillMaxWidth().height(if (expanded) 126.dp else 88.dp)
-            .padding(horizontal = if (expanded) 20.dp else 14.dp),
+        Modifier
+            .fillMaxWidth()
+            .height(if (expanded) 126.dp else 88.dp)
+            .padding(horizontal = if (expanded) 20.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
     ) {
         Box(
-            Modifier.size(if (expanded) 78.dp else 48.dp)
-                .background(Color.Transparent),
+            Modifier
+                .size(if (expanded) 76.dp else 48.dp)
+                .clip(RoundedCornerShape(if (expanded) 18.dp else 14.dp))
+                .background(NinetyState.pack.accentSoft)
+                .border(1.dp, NinetyState.pack.material.border, RoundedCornerShape(if (expanded) 18.dp else 14.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                "九",
-                style = if (expanded) NinetyTypography.headlineLarge else NinetyTypography.headlineMedium,
-                color = NinetyState.pack.accentBright,
+            Icon(
+                painter = painterResource(R.drawable.ic_launcher_mono),
+                contentDescription = null,
+                tint = NinetyState.pack.accentBright,
+                modifier = Modifier.size(if (expanded) 66.dp else 42.dp),
+            )
+            Box(
+                Modifier
+                    .size(if (expanded) 10.dp else 7.dp)
+                    .background(NinetyState.pack.material.secondary, CircleShape),
             )
         }
         if (expanded) {
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(15.dp))
             Column {
                 Text(
                     "NINETY",
-                    style = NinetyTypography.headlineMedium,
+                    style = NinetyTypography.displayMedium,
                     color = Ink.TextHi,
-                    letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified,
+                    maxLines = 1,
                 )
-                Spacer(Modifier.height(7.dp))
+                Spacer(Modifier.height(5.dp))
                 Text("190X4 · ANDROID", style = KickerStyle, color = Ink.TextFaint)
             }
         }
@@ -225,7 +234,7 @@ private fun DesktopBrand(expanded: Boolean) {
 private fun SidebarStateStrip(expanded: Boolean) {
     val state = VpnController.state
     val color = when (state) {
-        ConnState.Connected -> Ink.Ok
+        ConnState.Connected -> NinetyState.pack.material.status
         ConnState.Connecting, ConnState.Stopping -> NinetyState.pack.accentBright
         ConnState.Idle -> Ink.TextFaint
     }
@@ -236,8 +245,12 @@ private fun SidebarStateStrip(expanded: Boolean) {
         ConnState.Stopping -> "DISCONNECTING"
     }
     Row(
-        Modifier.fillMaxWidth().height(44.dp).background(Ink.Ink2.copy(alpha = 0.72f))
-            .border(1.dp, Ink.Line1).padding(horizontal = if (expanded) 22.dp else 0.dp),
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .background(NinetyState.pack.material.rowMiddle.copy(alpha = 0.78f))
+            .border(1.dp, Ink.Line1)
+            .padding(horizontal = if (expanded) 22.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
     ) {
@@ -258,33 +271,25 @@ private fun DesktopNavRow(
     expanded: Boolean,
     onClick: () -> Unit,
 ) {
-    val pack = NinetyState.pack
+    val shape: Shape = if (active) DesktopActiveNavShape else DesktopRowShape
     Row(
-        Modifier.fillMaxWidth().height(if (expanded) 66.dp else 58.dp)
-            .background(
-                if (active) {
-                    Brush.horizontalGradient(
-                        0f to Ink.Ink1,
-                        0.55f to pack.accentSoft,
-                        1f to Ink.Ink2,
-                    )
-                } else {
-                    Brush.horizontalGradient(listOf(Ink.Ink1, Ink.Ink2, Ink.Ink1))
-                },
-            )
-            .border(1.dp, if (active) pack.accentSoft else Ink.Line1)
+        Modifier
+            .fillMaxWidth()
+            .height(if (expanded) 66.dp else 58.dp)
+            .clip(shape)
+            .desktopNavRow(active, shape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onClick() }
-            .padding(horizontal = if (expanded) 26.dp else 0.dp),
+            .padding(start = if (expanded) 26.dp else 0.dp, end = if (expanded) 12.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
     ) {
         Icon(
             destination.icon,
             destination.label,
-            tint = if (active) pack.accentBright else Ink.TextLo,
+            tint = if (active) NinetyState.pack.accentBright else NinetyState.pack.material.sidebarText,
             modifier = Modifier.size(22.dp),
         )
         if (expanded) {
@@ -293,12 +298,23 @@ private fun DesktopNavRow(
                 Text(
                     destination.label,
                     style = NinetyTypography.titleMedium,
-                    color = if (active) Ink.TextHi else Ink.TextMid,
+                    color = if (active) NinetyState.pack.material.sidebarTextActive else NinetyState.pack.material.sidebarText,
                 )
                 Spacer(Modifier.height(3.dp))
-                Text(destination.kicker.uppercase(), style = KickerStyle, color = if (active) pack.accent else Ink.TextFaint)
+                Text(
+                    destination.kicker.uppercase(),
+                    style = KickerStyle,
+                    color = if (active) NinetyState.pack.material.secondary else Ink.TextFaint,
+                )
             }
-            if (active) Box(Modifier.width(3.dp).height(32.dp).background(pack.accent))
+            if (active) {
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height(40.dp)
+                        .background(NinetyState.pack.accent),
+                )
+            }
         }
     }
 }
@@ -309,10 +325,12 @@ private fun DesktopRuntimePanel() {
     val (downValue, downUnit) = Fmt.rate(monitor.down)
     val (upValue, upUnit) = Fmt.rate(monitor.up)
     Column(
-        Modifier.fillMaxWidth().background(Ink.Ink1.copy(alpha = 0.84f))
-            .border(1.dp, Ink.Line2).padding(18.dp),
+        Modifier
+            .fillMaxWidth()
+            .desktopCard(shape = RoundedCornerShape(0.dp))
+            .padding(18.dp),
     ) {
-        Text("RUNTIME · LIVE", style = KickerStyle, color = Ink.TextFaint)
+        Text("TRAFFIC · LIVE", style = KickerStyle, color = Ink.TextFaint)
         Spacer(Modifier.height(11.dp))
         SidebarMetric("↓", downValue, downUnit, NinetyState.pack.accentBright)
         Spacer(Modifier.height(7.dp))
@@ -320,7 +338,7 @@ private fun DesktopRuntimePanel() {
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line1))
         Spacer(Modifier.height(10.dp))
-        Text(TunnelModes.current().title.uppercase(), style = KickerStyle, color = NinetyState.pack.accentBright)
+        Text(TunnelModes.current().title.uppercase(), style = KickerStyle, color = NinetyState.pack.material.secondary)
         Spacer(Modifier.height(4.dp))
         Text(
             TunnelModes.activeLabel() ?: Store.activeProfile()?.name ?: "Маршрут не готов",
@@ -347,13 +365,13 @@ private fun SidebarMetric(arrow: String, value: String, unit: String, color: Col
 private fun CompactRailRuntime() {
     val active = VpnController.state == ConnState.Connected
     Box(
-        Modifier.fillMaxWidth().height(58.dp).background(Ink.Ink1).border(1.dp, Ink.Line1),
+        Modifier.fillMaxWidth().height(58.dp).desktopCard(shape = RoundedCornerShape(0.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             NinetyIcons.Shield,
             contentDescription = null,
-            tint = if (active) NinetyState.pack.accentBright else Ink.TextFaint,
+            tint = if (active) NinetyState.pack.material.status else Ink.TextFaint,
             modifier = Modifier.size(21.dp),
         )
     }
@@ -362,16 +380,27 @@ private fun CompactRailRuntime() {
 @Composable
 private fun CompactBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(Ink.Ink1).border(1.dp, Ink.Line1)
-            .navigationBarsPadding().padding(horizontal = 8.dp, vertical = 7.dp),
+        Modifier
+            .fillMaxWidth()
+            .desktopCard(shape = RoundedCornerShape(0.dp))
+            .navigationBarsPadding()
+            .padding(horizontal = 8.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         Dest.entries.forEach { destination ->
             val active = destination == current
             Column(
-                Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(NinetyRadius.sm))
                     .background(if (active) NinetyState.pack.accentSoft else Color.Transparent)
-                    .clickable { onSelect(destination) }.padding(vertical = 8.dp),
+                    .border(
+                        1.dp,
+                        if (active) NinetyState.pack.material.border else Color.Transparent,
+                        RoundedCornerShape(NinetyRadius.sm),
+                    )
+                    .clickable { onSelect(destination) }
+                    .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(
@@ -384,7 +413,7 @@ private fun CompactBottomBar(current: Dest, onSelect: (Dest) -> Unit) {
                 Text(
                     destination.label,
                     style = KickerStyle,
-                    color = if (active) NinetyState.pack.accentBright else Ink.TextFaint,
+                    color = if (active) NinetyState.pack.material.secondary else Ink.TextFaint,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                 )
