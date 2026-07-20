@@ -1,19 +1,18 @@
 name: Build Ninety Android
 
-# Core/runtime/quality and data tests fail fast before the expensive native build.
-# Release: only on semver tag vX.Y.Z; workflow_dispatch is for ad-hoc verification.
+# Core/data fail fast. Android build follows only after pure Kotlin and migration tests pass.
 on:
   pull_request:
     branches: [main]
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  # Suffix isolates the split-job pipeline from cancelled legacy runs.
   group: ${{ github.workflow }}-${{ github.ref }}-split-jobs
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -107,10 +106,10 @@ jobs:
             data/schemas/**
 
   android:
-    name: android build
+    name: android verification
     needs: [core, data]
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 80
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -159,14 +158,11 @@ jobs:
           go install -v github.com/sagernet/gomobile/cmd/gomobile@v0.1.11
           go install -v github.com/sagernet/gomobile/cmd/gobind@v0.1.11
           export PATH="$PATH:$(go env GOPATH)/bin"
-
-          java --version
           go run ./cmd/internal/build_libbox -target android
 
-          ls -lh libbox*.aar
+          test -s libbox.aar
           mkdir -p "$GITHUB_WORKSPACE/app/libs"
           cp libbox.aar "$GITHUB_WORKSPACE/app/libs/libbox.aar"
-          echo "libbox.aar -> app/libs/ ($(du -h libbox.aar | cut -f1))"
 
       - name: Verify libbox.aar
         run: test -s app/libs/libbox.aar && ls -lh app/libs/libbox.aar
@@ -175,6 +171,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+
+      - name: App unit tests
+        id: app_tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee ci-app-tests.log
 
       - name: Assemble debug APK
         id: assemble_debug
@@ -200,20 +204,24 @@ jobs:
           name: ninety-android-build-diagnostics-${{ github.event.pull_request.number }}
           if-no-files-found: warn
           path: |
+            ci-app-tests.log
             ci-assemble-debug.log
             ci-lint-debug.log
+            app/build/reports/tests/**
             app/build/reports/lint-results-debug.*
             app/build/reports/lint-results-debug/**
 
       - name: Fail when Android verification failed
         if: always()
         env:
+          APP_TESTS: ${{ steps.app_tests.outcome }}
           ASSEMBLE_DEBUG: ${{ steps.assemble_debug.outcome }}
           LINT_DEBUG: ${{ steps.lint_debug.outcome }}
         run: |
+          echo "app tests:      $APP_TESTS"
           echo "assemble debug: $ASSEMBLE_DEBUG"
           echo "lint debug:     $LINT_DEBUG"
-          if [ "$ASSEMBLE_DEBUG" != "success" ] || [ "$LINT_DEBUG" != "success" ]; then
+          if [ "$APP_TESTS" != "success" ] || [ "$ASSEMBLE_DEBUG" != "success" ] || [ "$LINT_DEBUG" != "success" ]; then
             exit 1
           fi
 
@@ -225,19 +233,19 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
 
       - name: Decode release keystore
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/ninety-release.jks"
 
-      - name: Assemble release APKs (per-ABI)
-        if: github.event_name != 'pull_request'
+      - name: Assemble and lint release APKs
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         env:
           NINETY_KEYSTORE: ${{ runner.temp }}/ninety-release.jks
           NINETY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           NINETY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+        run: gradle :app:assembleRelease :app:lintRelease --no-daemon --stacktrace
 
-      - name: Stage release APKs
-        if: github.event_name != 'pull_request'
+      - name: Stage release APKs and checksums
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: |
           set -e
           VER="${GITHUB_REF_NAME#v}"
@@ -245,22 +253,37 @@ jobs:
           DIR=app/build/outputs/apk/release
           mkdir -p staged
           for ABI in arm64-v8a armeabi-v7a; do
-            cp "$DIR/app-${ABI}-release.apk" "staged/ninety-android-${VER}-${ABI}.apk"
-            echo "staged ninety-android-${VER}-${ABI}.apk ($(du -h "$DIR/app-${ABI}-release.apk" | cut -f1))"
+            NAME="ninety-android-${VER}-${ABI}.apk"
+            cp "$DIR/app-${ABI}-release.apk" "staged/$NAME"
+            (cd staged && sha256sum "$NAME" > "$NAME.sha256")
+            echo "staged $NAME ($(du -h "$DIR/app-${ABI}-release.apk" | cut -f1))"
           done
 
       - name: Upload release artifact
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: ninety-android-apk
-          path: staged/*.apk
+          path: staged/*
+
+  publish:
+    name: publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release files
+        uses: actions/download-artifact@v4
+        with:
+          name: ninety-android-apk
+          path: staged
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: Ninety Android ${{ github.ref_name }}
-          files: staged/*.apk
+          files: staged/*
           prerelease: false
           make_latest: true
