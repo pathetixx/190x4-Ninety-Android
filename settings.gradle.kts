@@ -21,3 +21,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "Ninety"
 include(":app")
+include(":core:model")
+include(":core:parser")
+include(":core:config")
+include(":core:runtime")
+include(":core:quality")
+include(":data")

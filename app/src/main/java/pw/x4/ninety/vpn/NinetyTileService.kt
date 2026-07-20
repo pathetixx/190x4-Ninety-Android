@@ -1,5 +1,6 @@
 package pw.x4.ninety.vpn
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
@@ -52,16 +53,26 @@ class NinetyTileService : TileService() {
         t.updateTile()
     }
 
+    /**
+     * Android 14+ требует PendingIntent и бросает UnsupportedOperationException для
+     * старого overload. На API 26–33 PendingIntent-overload ещё отсутствует, поэтому
+     * legacy-вызов остаётся только в корректно ограждённой ветке.
+     */
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun openApp(action: String?) {
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (action != null) intent.action = action
-        if (Build.VERSION.SDK_INT >= 34) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val pi = PendingIntent.getActivity(
-                this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             startActivityAndCollapse(pi)
         } else {
-            @Suppress("DEPRECATION") startActivityAndCollapse(intent)
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(intent)
         }
     }
 }

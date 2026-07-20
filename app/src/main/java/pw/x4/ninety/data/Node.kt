@@ -35,10 +35,14 @@ data class Node(
     val downMbps: Int = 0,
     val obfs: String = "",
     val obfsPassword: String = "",
+    val pinSHA256: String = "",
     val congestion: String = "",
     val udpRelay: String = "",
     val insecure: Boolean = false,
     val zeroRtt: Boolean = false,
+    val disableSni: Boolean = false,
+    val plugin: String = "",
+    val pluginOpts: String = "",
     val raw: String = "",
     val fromSub: Boolean = false,  // пришла из подписки → заменяется при refresh
     val subId: String = "",        // id профиля-владельца (Profile.id); "" = legacy
@@ -58,10 +62,11 @@ data class Node(
         put("security", security); put("type", type); put("flow", flow); put("sni", sni)
         put("fp", fp); put("pbk", pbk); put("sid", sid); put("alpn", alpn); put("path", path)
         put("hostHeader", hostHeader); put("serviceName", serviceName); put("mode", mode)
-        put("extra", extra)  // xhttp под-опции (download/xmux/паддинги) — без персиста xhttp ломался после рестарта
+        put("extra", extra)
         put("upMbps", upMbps); put("downMbps", downMbps); put("obfs", obfs); put("obfsPassword", obfsPassword)
-        put("congestion", congestion); put("udpRelay", udpRelay); put("insecure", insecure)
-        put("zeroRtt", zeroRtt); put("raw", raw); put("fromSub", fromSub); put("subId", subId)
+        put("pinSHA256", pinSHA256); put("congestion", congestion); put("udpRelay", udpRelay); put("insecure", insecure)
+        put("zeroRtt", zeroRtt); put("disableSni", disableSni); put("plugin", plugin); put("pluginOpts", pluginOpts)
+        put("raw", raw); put("fromSub", fromSub); put("subId", subId)
     }
 
     companion object {
@@ -92,10 +97,14 @@ data class Node(
             downMbps = o.optInt("downMbps"),
             obfs = o.optString("obfs"),
             obfsPassword = o.optString("obfsPassword"),
+            pinSHA256 = o.optString("pinSHA256"),
             congestion = o.optString("congestion"),
             udpRelay = o.optString("udpRelay"),
             insecure = o.optBoolean("insecure"),
             zeroRtt = o.optBoolean("zeroRtt"),
+            disableSni = o.optBoolean("disableSni"),
+            plugin = o.optString("plugin"),
+            pluginOpts = o.optString("pluginOpts"),
             raw = o.optString("raw"),
             fromSub = o.optBoolean("fromSub"),
             subId = o.optString("subId"),

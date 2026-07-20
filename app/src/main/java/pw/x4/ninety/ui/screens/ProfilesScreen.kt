@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -37,268 +39,323 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import pw.x4.ninety.data.Fmt
 import pw.x4.ninety.data.Importer
 import pw.x4.ninety.data.Profile
 import pw.x4.ninety.data.Store
-import pw.x4.ninety.ui.components.IconTile
 import pw.x4.ninety.ui.components.PillButton
-import pw.x4.ninety.ui.components.topHairline
-import pw.x4.ninety.ui.components.ScreenHeader
 import pw.x4.ninety.ui.icons.NinetyIcons
+import pw.x4.ninety.ui.layout.NinetyLayoutMetrics
+import pw.x4.ninety.ui.layout.NinetyPage
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
 import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
-import pw.x4.ninety.vpn.ConnState
 import pw.x4.ninety.vpn.NinetyVpnService
+import pw.x4.ninety.vpn.TunnelModes
 import pw.x4.ninety.vpn.VpnController
 
 @Composable
-fun ProfilesScreen() {
+fun ProfilesScreen(metrics: NinetyLayoutMetrics) {
     val context = LocalContext.current
     val profiles = Store.profiles
     var busy by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(20.dp)
-    ) {
-        ScreenHeader(
-            kicker = "Subscriptions",
-            title = "Профили",
-            actions = {
-                if (profiles.any { it.isSub && it.url.isNotBlank() }) {
-                    PillButton(if (busy) "…" else "Обновить", enabled = !busy) {
-                        Importer.refreshAll(
-                            onLoading = { busy = true },
-                            onDone = { c, e -> busy = false; toast(context, e ?: "Обновлено узлов: $c") },
-                        )
+    NinetyPage(metrics) {
+        Column(Modifier.fillMaxSize().padding(top = if (metrics.isCompact) 16.dp else 24.dp)) {
+            ProfilesHeader(
+                busy = busy,
+                canRefresh = profiles.any { it.isSub && it.url.isNotBlank() },
+                count = profiles.size,
+                onRefresh = {
+                    Importer.refreshAll(
+                        onLoading = { busy = true },
+                        onDone = { count, error ->
+                            busy = false
+                            toast(context, error ?: "Обновлено узлов: $count")
+                        },
+                    )
+                },
+                onAdd = { showAdd = true },
+            )
+            Spacer(Modifier.height(16.dp))
+            ProfilesSummary(profiles)
+            Spacer(Modifier.height(14.dp))
+
+            if (profiles.isEmpty()) {
+                EmptyState(Modifier.fillMaxSize()) { showAdd = true }
+            } else {
+                LazyVerticalGrid(
+                    columns = if (metrics.isExpanded) GridCells.Fixed(1) else if (metrics.isCompact) GridCells.Fixed(1) else GridCells.Adaptive(330.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 28.dp),
+                ) {
+                    items(profiles, key = { it.id }) { profile ->
+                        if (metrics.isExpanded) {
+                            DesktopProfileRow(
+                                profile = profile,
+                                active = profile.id == Store.activeProfileId,
+                                onSelect = { selectProfile(context, profile.id) },
+                                onDelete = { deleteProfile(context, profile.id) },
+                            )
+                        } else {
+                            CompactProfileCard(
+                                profile = profile,
+                                active = profile.id == Store.activeProfileId,
+                                onSelect = { selectProfile(context, profile.id) },
+                                onDelete = { deleteProfile(context, profile.id) },
+                            )
+                        }
                     }
                 }
-                PillButton("Добавить") { showAdd = true }
-            },
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Подписки и одиночные конфиги. Активный профиль помечен точкой — используется при подключении.",
-            style = NinetyTypography.bodyMedium, color = Ink.TextMid,
-        )
-        Spacer(Modifier.height(16.dp))
-
-        if (profiles.isEmpty()) {
-            EmptyState { showAdd = true }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(profiles, key = { it.id }) { p ->
-                    ProfileCard(
-                        profile = p,
-                        active = p.id == Store.activeProfileId,
-                        onSelect = {
-                            Store.setActiveProfile(p.id)
-                            if (VpnController.state == ConnState.Connected) NinetyVpnService.reload(context)
-                        },
-                        onDelete = { Store.removeProfile(p.id); toast(context, "Профиль удалён") },
-                    )
-                }
             }
         }
     }
 
-    if (showAdd) AddModal(context, onDismiss = { showAdd = false })
+    if (showAdd) AddProfileDialog(context, onDismiss = { showAdd = false })
 }
 
 @Composable
-private fun EmptyState(onAdd: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(top = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("SUBSCRIPTIONS · EMPTY", style = KickerStyle, color = Ink.TextFaint)
-        Spacer(Modifier.height(10.dp))
-        Text("Нет профилей", style = NinetyTypography.titleLarge, color = Ink.TextHi)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Скопируйте ссылку подписки или конфиг (vless/vmess/trojan/ss/hysteria2/tuic) и нажмите «Добавить».",
-            style = NinetyTypography.bodyMedium, color = Ink.TextMid,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
-        Spacer(Modifier.height(16.dp))
-        PillButton("Добавить") { onAdd() }
+private fun ProfilesHeader(
+    busy: Boolean,
+    canRefresh: Boolean,
+    count: Int,
+    onRefresh: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    Column {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("SUBSCRIPTIONS · $count", style = KickerStyle, color = Ink.TextFaint)
+                Spacer(Modifier.height(5.dp))
+                Text("Профили", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+                Spacer(Modifier.height(5.dp))
+                Text("Подписки и одиночные конфиги без скрытого изменения активного маршрута.", style = NinetyTypography.bodyMedium, color = Ink.TextMid)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (canRefresh) {
+                PillButton(if (busy) "Обновляю…" else "Обновить все", enabled = !busy, onClick = onRefresh)
+            }
+            PillButton("Добавить профиль", onClick = onAdd)
+        }
     }
 }
 
-// ── Карточка профиля (порт desktop .prof-card) ─────────────
 @Composable
-private fun ProfileCard(profile: Profile, active: Boolean, onSelect: () -> Unit, onDelete: () -> Unit) {
+private fun ProfilesSummary(profiles: List<Profile>) {
+    val totalNodes = profiles.sumOf { Store.nodeCount(it.id) }
+    val subscriptions = profiles.count(Profile::isSub)
+    val active = Store.activeProfile()
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ink.Ink1)
+            .border(1.dp, Ink.Line1, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SummaryMetric("PROFILES", profiles.size.toString())
+        SummaryMetric("NODES", totalNodes.toString())
+        SummaryMetric("SUBS", subscriptions.toString())
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+            Text("ACTIVE", style = KickerStyle, color = Ink.TextFaint)
+            Text(active?.name ?: "—", style = MonoStyle, color = NinetyState.pack.accentBright, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun SummaryMetric(label: String, value: String) {
+    Column {
+        Text(label, style = KickerStyle, color = Ink.TextFaint)
+        Spacer(Modifier.height(3.dp))
+        Text(value, style = NinetyTypography.titleMedium, color = Ink.TextHi)
+    }
+}
+
+@Composable
+private fun DesktopProfileRow(profile: Profile, active: Boolean, onSelect: () -> Unit, onDelete: () -> Unit) {
     val pack = NinetyState.pack
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 78.dp)
             .background(
-                if (active) Brush.verticalGradient(0f to pack.accentSoft, 0.4f to Ink.Ink1, 1f to Ink.Ink1)
+                if (active) Brush.horizontalGradient(listOf(pack.accentSoft, Ink.Ink1, Ink.Ink1))
                 else SolidColor(Ink.Ink1),
-                RoundedCornerShape(16.dp),
             )
-            .border(1.dp, if (active) pack.accentSoft else Ink.Line2, RoundedCornerShape(16.dp))
-            .topHairline(color = if (active) pack.accent else Color.White, alpha = if (active) 0.5f else 0.08f)
-            .clickable { onSelect() }
-            .padding(14.dp),
+            .border(1.dp, if (active) pack.accentSoft else Ink.Line1)
+            .clickable { onSelect() }.padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).background(if (active) Ink.Ok else Ink.TextFaint, CircleShape))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1.45f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(profile.name, style = NinetyTypography.titleMedium, color = Ink.TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
+                StatusBadge(if (active) "ACTIVE" else if (profile.isSub) "SUB" else "SINGLE", active)
+            }
+            Spacer(Modifier.height(5.dp))
+            Text(profileSource(profile), style = MonoStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(18.dp))
+        DesktopMetric("NODES", Store.nodeCount(profile.id).toString(), Modifier.width(74.dp))
+        DesktopMetric("EXPIRES", profile.daysLeft()?.let { "$it d" } ?: "∞", Modifier.width(86.dp))
+        DesktopMetric(
+            if (profile.total > 0) "TRAFFIC" else "UPDATED",
+            if (profile.total > 0) Fmt.bytes(profile.used) else Fmt.relTime(profile.updatedAt),
+            Modifier.width(112.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.size(38.dp).clickable { onDelete() }, contentAlignment = Alignment.Center) {
+            Icon(NinetyIcons.Trash, "Удалить", tint = Ink.TextLo, modifier = Modifier.size(17.dp))
+        }
+    }
+}
+
+@Composable
+private fun DesktopMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, style = KickerStyle, color = Ink.TextFaint)
+        Spacer(Modifier.height(4.dp))
+        Text(value, style = MonoStyle, color = Ink.TextMid, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun CompactProfileCard(profile: Profile, active: Boolean, onSelect: () -> Unit, onDelete: () -> Unit) {
+    val pack = NinetyState.pack
+    val shape = RoundedCornerShape(15.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape)
+            .background(if (active) Brush.verticalGradient(listOf(pack.accentSoft, Ink.Ink1, Ink.Ink1)) else SolidColor(Ink.Ink1))
+            .border(1.dp, if (active) pack.accentSoft else Ink.Line1, shape)
+            .clickable { onSelect() }.padding(15.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconTile(if (profile.isSub) NinetyIcons.Globe else NinetyIcons.Nodes, size = 42, accent = active)
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        profile.name, style = NinetyTypography.titleMedium, color = Ink.TextHi,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Badge(if (active) "АКТИВНЫЙ" else if (profile.isSub) "ПОДПИСКА" else "КОНФИГ", active)
-                }
-                Spacer(Modifier.height(4.dp))
-                val sub = when {
-                    profile.isSub && profile.url.isNotBlank() -> profile.url
-                    profile.isSub -> "${Store.nodeCount(profile.id)} нод"
-                    else -> singleHost(profile)
-                }
-                Text(sub, style = MonoStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.size(32.dp).clip(CircleShape).clickable { onDelete() },
+                Modifier.size(42.dp).clip(RoundedCornerShape(11.dp))
+                    .background(if (active) pack.accentSoft else Ink.Ink2),
                 contentAlignment = Alignment.Center,
-            ) { Icon(NinetyIcons.Trash, "Удалить", tint = Ink.TextLo, modifier = Modifier.size(16.dp)) }
-        }
-
-        // Бар трафика подписки (если есть лимит)
-        profile.usedFraction()?.let { frac ->
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Ink.Line1)) {
-                Box(Modifier.fillMaxWidth(frac).height(3.dp).clip(RoundedCornerShape(2.dp)).background(pack.accent))
+            ) {
+                Icon(if (profile.isSub) NinetyIcons.Globe else NinetyIcons.Nodes, null, tint = if (active) pack.accentBright else Ink.TextMid, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(profile.name, style = NinetyTypography.titleMedium, color = Ink.TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Text(profileSource(profile), style = MonoStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Box(Modifier.size(36.dp).clickable { onDelete() }, contentAlignment = Alignment.Center) {
+                Icon(NinetyIcons.Trash, "Удалить", tint = Ink.TextLo, modifier = Modifier.size(16.dp))
             }
         }
-
-        // Строка метрик
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            if (profile.isSub) {
-                StatCell("${Store.nodeCount(profile.id)}", "УЗЛОВ")
-                StatCell(profile.daysLeft()?.let { "$it" } ?: "∞", "ИСТЕКАЕТ")
-                if (profile.total > 0) StatCell(Fmt.bytes(profile.used), "ТРАФИК")
-                else StatCell(Fmt.relTime(profile.updatedAt), "ОБНОВЛЕНО")
-            } else {
-                val n = Store.nodesOf(profile.id).firstOrNull()
-                StatCell((n?.proto ?: "vless").uppercase(), "ПРОТОКОЛ")
-                StatCell((n?.security?.takeIf { it != "none" } ?: "tcp").uppercase(), "БЕЗОПАСНОСТЬ")
-            }
+        Spacer(Modifier.height(13.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            SummaryMetric("NODES", Store.nodeCount(profile.id).toString())
+            SummaryMetric("EXPIRES", profile.daysLeft()?.let { "$it d" } ?: "∞")
+            SummaryMetric("STATE", if (active) "ACTIVE" else "READY")
         }
     }
 }
 
 @Composable
-private fun StatCell(value: String, label: String) {
-    Column {
-        Text(value, style = MonoStyle.copy(fontSize = 13.sp), color = Ink.TextHi, maxLines = 1)
-        Spacer(Modifier.height(2.dp))
-        Text(label, style = KickerStyle.copy(fontSize = 9.sp), color = Ink.TextFaint)
-    }
-}
-
-@Composable
-private fun Badge(text: String, active: Boolean) {
-    val pack = NinetyState.pack
+private fun StatusBadge(text: String, active: Boolean) {
     Text(
-        AnnotatedString(text),
-        style = KickerStyle.copy(fontSize = 9.sp),
-        color = if (active) pack.accentBright else Ink.TextMid,
-        modifier = Modifier
-            .background(if (active) pack.accentSoft else Ink.Ink3, RoundedCornerShape(4.dp))
-            .border(1.dp, if (active) pack.accent else Ink.Line2, RoundedCornerShape(4.dp))
+        text,
+        style = KickerStyle,
+        color = if (active) NinetyState.pack.accentBright else Ink.TextMid,
+        modifier = Modifier.background(if (active) NinetyState.pack.accentSoft else Ink.Ink3, RoundedCornerShape(4.dp))
+            .border(1.dp, if (active) NinetyState.pack.accent else Ink.Line2, RoundedCornerShape(4.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
 
-// ── Модалка добавления (порт desktop add-modal: буфер + ручной ввод) ──
 @Composable
-private fun AddModal(context: Context, onDismiss: () -> Unit) {
+private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
+    Column(modifier.padding(top = 38.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(72.dp).background(Ink.Ink2).border(1.dp, Ink.Line2), contentAlignment = Alignment.Center) {
+            Icon(NinetyIcons.Profiles, null, tint = Ink.TextFaint, modifier = Modifier.size(30.dp))
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("SUBSCRIPTIONS · EMPTY", style = KickerStyle, color = Ink.TextFaint)
+        Spacer(Modifier.height(8.dp))
+        Text("Нет профилей", style = NinetyTypography.titleLarge, color = Ink.TextHi)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Добавьте подписку или одиночный VLESS, VMess, Trojan, Shadowsocks, Hysteria2 или TUIC.",
+            style = NinetyTypography.bodyMedium,
+            color = Ink.TextMid,
+            modifier = Modifier.widthIn(max = 480.dp),
+        )
+        Spacer(Modifier.height(18.dp))
+        PillButton("Добавить профиль", onClick = onAdd)
+    }
+}
+
+@Composable
+private fun AddProfileDialog(context: Context, onDismiss: () -> Unit) {
     val pack = NinetyState.pack
     var text by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    fun doImport(raw: String) {
-        val r = raw.trim()
-        if (r.isEmpty()) { error = "Пусто — вставьте ссылку подписки или конфиг"; return }
+    fun import(raw: String) {
+        val value = raw.trim()
+        if (value.isEmpty()) {
+            error = "Пусто — вставьте ссылку подписки или конфиг"
+            return
+        }
         error = null
         Importer.importText(
-            raw = r,
+            raw = value,
             onLoading = { busy = true },
-            onDone = { added, err ->
+            onDone = { added, importError ->
                 busy = false
-                if (err != null) error = err
-                else {
-                    Toast.makeText(context, if (added > 0) "Добавлено: $added" else "Ничего не добавлено", Toast.LENGTH_LONG).show()
+                if (importError != null) {
+                    error = importError
+                } else {
+                    toast(context, if (added > 0) "Добавлено: $added" else "Ничего не добавлено")
                     onDismiss()
                 }
             },
         )
     }
 
-    Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
+    Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Ink.Ink1, RoundedCornerShape(20.dp))
-                .border(1.dp, Ink.Line2, RoundedCornerShape(20.dp))
-                .padding(20.dp),
+            Modifier.padding(horizontal = 20.dp).fillMaxWidth().widthIn(max = 560.dp)
+                .clip(RoundedCornerShape(18.dp)).background(Ink.Ink1)
+                .border(1.dp, Ink.Line2, RoundedCornerShape(18.dp)).padding(22.dp),
         ) {
             Text("ADD · PROFILE", style = KickerStyle, color = pack.accentBright)
             Spacer(Modifier.height(6.dp))
             Text("Добавить профиль", style = NinetyTypography.titleLarge, color = Ink.TextHi)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Ссылка подписки (http/https) или конфиг vless/vmess/trojan/ss/hysteria2/tuic. Можно вставить список — каждый конфиг с новой строки.",
-                style = NinetyTypography.bodyMedium, color = Ink.TextMid,
-            )
-            Spacer(Modifier.height(16.dp))
-
-            // Вставить из буфера — один тап
+            Spacer(Modifier.height(5.dp))
+            Text("Ссылка подписки, одиночный конфиг или список конфигов — каждый с новой строки.", style = NinetyTypography.bodyMedium, color = Ink.TextMid)
+            Spacer(Modifier.height(17.dp))
             Box(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(pack.accentSoft)
-                    .border(1.dp, pack.accent, RoundedCornerShape(12.dp))
-                    .clickable(enabled = !busy) { doImport(readClipboard(context)) }
-                    .padding(vertical = 13.dp),
+                Modifier.fillMaxWidth().background(pack.accentSoft).border(1.dp, pack.accent)
+                    .clickable(enabled = !busy) { import(readClipboard(context)) }.padding(vertical = 13.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(if (busy) "ЗАГРУЖАЮ…" else "ВСТАВИТЬ ИЗ БУФЕРА", style = MonoStyle, color = pack.accentBright)
             }
-
             Spacer(Modifier.height(14.dp))
-            Text("или вставьте вручную", style = KickerStyle, color = Ink.TextFaint)
+            Text("ИЛИ ВСТАВЬТЕ ВРУЧНУЮ", style = KickerStyle, color = Ink.TextFaint)
             Spacer(Modifier.height(8.dp))
             Box(
-                Modifier.fillMaxWidth()
-                    .heightIn(min = 76.dp)
-                    .background(Ink.Ink2, RoundedCornerShape(10.dp))
-                    .border(1.dp, Ink.Line2, RoundedCornerShape(10.dp))
-                    .padding(12.dp),
+                Modifier.fillMaxWidth().heightIn(min = 96.dp).background(Ink.Ink2)
+                    .border(1.dp, Ink.Line2).padding(12.dp),
             ) {
-                if (text.isEmpty()) {
-                    Text("vless://… или https://…", style = MonoStyle, color = Ink.TextFaint)
-                }
+                if (text.isEmpty()) Text("vless://… или https://…", style = MonoStyle, color = Ink.TextFaint)
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -307,48 +364,62 @@ private fun AddModal(context: Context, onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-
             error?.let {
                 Spacer(Modifier.height(10.dp))
                 Text(it, style = MonoStyle, color = Ink.Err)
             }
-
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(17.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ModalBtn("ОТМЕНА", primary = false, enabled = !busy, modifier = Modifier.weight(1f)) { onDismiss() }
-                ModalBtn("ДОБАВИТЬ", primary = true, enabled = !busy, modifier = Modifier.weight(1f)) { doImport(text) }
+                DialogButton("ОТМЕНА", primary = false, enabled = !busy, modifier = Modifier.weight(1f), onClick = onDismiss)
+                DialogButton("ДОБАВИТЬ", primary = true, enabled = !busy, modifier = Modifier.weight(1f)) { import(text) }
             }
         }
     }
 }
 
 @Composable
-private fun ModalBtn(
-    text: String, primary: Boolean, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit,
+private fun DialogButton(
+    text: String,
+    primary: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
 ) {
     val pack = NinetyState.pack
     Box(
-        modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (primary) pack.accentSoft else Ink.Ink2)
-            .border(1.dp, if (primary) pack.accent else Ink.Line2, RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled) { onClick() }
-            .padding(vertical = 12.dp),
+        modifier.background(if (primary) pack.accentSoft else Ink.Ink2)
+            .border(1.dp, if (primary) pack.accent else Ink.Line2)
+            .clickable(enabled = enabled) { onClick() }.padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, style = MonoStyle, color = if (primary) pack.accentBright else Ink.TextMid)
     }
 }
 
-private fun singleHost(p: Profile): String {
-    val n = Store.nodesOf(p.id).firstOrNull() ?: return "Одиночный конфиг"
-    return "${n.host}:${n.port}"
+private fun selectProfile(context: Context, profileId: String) {
+    Store.setActiveProfile(profileId)
+    if (VpnController.isActive && TunnelModes.current().requiresProxySelection) NinetyVpnService.reload(context)
+}
+
+private fun deleteProfile(context: Context, profileId: String) {
+    Store.removeProfile(profileId)
+    toast(context, "Профиль удалён")
+}
+
+private fun profileSource(profile: Profile): String = when {
+    profile.isSub && profile.url.isNotBlank() -> profile.url
+    profile.isSub -> "${Store.nodeCount(profile.id)} нод"
+    else -> singleHost(profile)
+}
+
+private fun singleHost(profile: Profile): String {
+    val node = Store.nodesOf(profile.id).firstOrNull() ?: return "Одиночный конфиг"
+    return "${node.host}:${node.port}"
 }
 
 private fun readClipboard(context: Context): String {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    return cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    return clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
 }
 
-private fun toast(context: Context, msg: String) =
-    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+private fun toast(context: Context, message: String) = Toast.makeText(context, message, Toast.LENGTH_LONG).show()

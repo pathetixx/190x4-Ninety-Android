@@ -15,158 +15,342 @@ import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+import pw.x4.ninety.data.Store
 
-/**
- * Read-only мост к работающему ядру (порт desktop clash-api на Android без REST):
- * CommandClient подписывается на CommandGroup и в реальном времени отдаёт группы
- * outbound'ов. Из них берём:
- *   • пинги нод — URLTestDelay элементов группы urltest "auto";
- *   • эффективный узел авто — .Selected этой же группы (как auto.now на desktop);
- *   • текущий выбор селектора — .Selected группы "proxy".
- * Клиент коннектится к in-process CommandServer (unix-сокет на basePath, который
- * уже выставлен Libbox.setup в сервисе). [urlTestAll] перетестирует весь профиль —
- * это и есть FAB-молния в Нодах.
- */
-object ClashMonitor : CommandClientHandler {
+enum class ProbePhase {
+    Offline,
+    Connecting,
+    Testing,
+    Partial,
+    Ready,
+    Error,
+}
 
+object ClashMonitor {
     data class Snapshot(
-        val delays: Map<String, Int> = emptyMap(), // clash-tag -> ms (0 / >=65000 = недоступна)
-        val selectorNow: String? = null,            // "auto" | nodeTag — что выбрано в селекторе
-        val autoNow: String? = null,                // эффективная нода авто-группы (быстрейшая)
+        val delays: Map<String, Int> = emptyMap(),
+        val selectorNow: String? = null,
+        val autoNow: String? = null,
         val connected: Boolean = false,
-        val testing: Boolean = false,
-        val up: Long = 0,                           // исходящий, байт/с (CommandStatus)
-        val down: Long = 0,                         // входящий, байт/с
+        val phase: ProbePhase = ProbePhase.Offline,
+        val probeCycle: Long = 0,
+        val measuredAtMs: Long = 0,
+        val lastError: String? = null,
+        val up: Long = 0,
+        val down: Long = 0,
     ) {
-        /** Тег ноды, через которую реально идёт трафик (порт desktop pickEffectiveNode):
-         *  селектор «auto» → быстрейший узел auto-группы; иначе — выбранный тег. */
-        fun effectiveTag(): String? = when (val s = selectorNow) {
-            null -> autoNow
-            "auto" -> autoNow
-            else -> s
+        val testing: Boolean get() = phase == ProbePhase.Testing
+
+        fun effectiveTag(): String? = when (val selected = selectorNow) {
+            null, "auto" -> autoNow
+            else -> selected
         }
 
-        /** Задержка эффективной ноды (для ping-пилюли hero). */
-        fun effectiveDelay(): Int? = effectiveTag()?.let { delays[it] }
+        fun effectiveDelay(): Int? = effectiveTag()?.let(delays::get)?.takeIf(::validDelay)
     }
 
     var snapshot by mutableStateOf(Snapshot())
         private set
 
     private val main = Handler(Looper.getMainLooper())
-    private var client: CommandClient? = null
-    @Volatile private var running = false
+    private val executor = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "ninety-probe")
+    }
+    private val generation = AtomicLong()
+    private val clientEpoch = AtomicLong()
+    private val cycle = AtomicLong()
 
-    /** Поднять монитор (зовётся из VpnController при Connected). Идемпотентно. */
+    @Volatile private var running = false
+    @Volatile private var client: CommandClient? = null
+    @Volatile private var currentGeneration = 0L
+    @Volatile private var currentClientEpoch = 0L
+    @Volatile private var activeCycle = 0L
+    @Volatile private var resultCycle = 0L
+    @Volatile private var reconnectAttempt = 0
+    @Volatile private var timeoutFuture: ScheduledFuture<*>? = null
+
     fun start() {
         if (running) return
         running = true
-        spawnConnect()
+        reconnectAttempt = 0
+        val next = generation.incrementAndGet()
+        currentGeneration = next
+        publish(next) { Snapshot(phase = ProbePhase.Connecting) }
+        scheduleConnect(next, 0)
     }
 
-    private fun spawnConnect() {
-        Thread({
-            if (!running) return@Thread
-            try {
-                val opts = CommandClientOptions()
-                opts.addCommand(Libbox.CommandGroup)
-                opts.addCommand(Libbox.CommandStatus) // трафик up/down + память
-                opts.statusInterval = 1_000_000_000L // 1s — частота статус-пушей
-                val c = CommandClient(this, opts) // gomobile: NewCommandClient → конструктор
-                client = c
-                c.connect() // дозванивается и стартует read-loop в горутине, возвращается сразу
-                // Кикаем urltest сразу + повтор через 1.5с. Первый кик может уйти ДО того,
-                // как ядро успело подписать group-стрим (тогда замеры начнутся только по
-                // interval=600с → «авто долго собирает»). Повтор гарантирует старт замеров.
-                kickAuto(c)
-                try { Thread.sleep(1500) } catch (_: Throwable) {}
-                if (running) kickAuto(c)
-            } catch (_: Throwable) {
-                // дозвониться не вышло — повторим, пока активны (ядро могло ещё не поднять сокет)
-                if (running) { try { Thread.sleep(1000) } catch (_: Throwable) {}; if (running) spawnConnect() }
-            }
-        }, "ninety-clash").start()
-    }
-
-    private fun kickAuto(c: CommandClient) { try { c.urlTest("auto") } catch (_: Throwable) {} }
-
-    /** Погасить монитор (зовётся из VpnController при Idle). */
     fun stop() {
-        if (!running) return
+        if (!running && snapshot.phase == ProbePhase.Offline) return
         running = false
-        val c = client
+        val stoppedGeneration = generation.incrementAndGet()
+        currentGeneration = stoppedGeneration
+        currentClientEpoch = clientEpoch.incrementAndGet()
+        timeoutFuture?.cancel(false)
+        timeoutFuture = null
+        val old = client
         client = null
-        Thread({ try { c?.disconnect() } catch (_: Throwable) {} }, "ninety-clash-stop").start()
-        main.post { snapshot = Snapshot() }
+        executor.execute { runCatching { old?.disconnect() } }
+        publishStopped(stoppedGeneration)
     }
 
-    /** Перетест всех нод профиля (FAB-молния). Триггерит urltest-группу "auto". */
     fun urlTestAll() {
-        val c = client ?: return
-        main.post { snapshot = snapshot.copy(testing = true) }
-        Thread({
-            try { c.urlTest("auto") } catch (_: Throwable) {}
-            // «testing» сбросит следующий writeGroups; страховка — таймаут.
-            main.postDelayed({ snapshot = snapshot.copy(testing = false) }, 6000)
-        }, "ninety-urltest").start()
+        val session = currentGeneration
+        executor.execute { requestProbe(session, manual = true) }
     }
 
-    // ── CommandClientHandler (сигнатуры — как в эталонном SFA) ──
-    override fun connected() { main.post { snapshot = snapshot.copy(connected = true) } }
-    override fun disconnected(message: String?) {
-        main.post { snapshot = snapshot.copy(connected = false) }
-        // Стрим групп умирает при reload ядра (смена ноды/профиля) — переподключаемся,
-        // иначе пинги застывают после первого переключения.
-        if (running) {
-            val old = client
-            client = null
-            Thread({
-                try { old?.disconnect() } catch (_: Throwable) {}
-                try { Thread.sleep(600) } catch (_: Throwable) {}
-                if (running) spawnConnect()
-            }, "ninety-clash-reconn").start()
+    private fun scheduleConnect(session: Long, delayMs: Long) {
+        executor.schedule({ connect(session) }, delayMs, TimeUnit.MILLISECONDS)
+    }
+
+    private fun connect(session: Long) {
+        if (!isCurrent(session)) return
+        val epoch = clientEpoch.incrementAndGet()
+        currentClientEpoch = epoch
+        publish(session, epoch) { it.copy(phase = ProbePhase.Connecting, lastError = null) }
+        val old = client
+        client = null
+        runCatching { old?.disconnect() }
+
+        try {
+            val options = CommandClientOptions().apply {
+                addCommand(Libbox.CommandStatus)
+                if (canProbe()) addCommand(Libbox.CommandGroup)
+                statusInterval = STATUS_INTERVAL_NS
+            }
+            val next = CommandClient(SessionHandler(session, epoch), options)
+            if (!isCurrent(session, epoch)) {
+                runCatching { next.disconnect() }
+                return
+            }
+            client = next
+            next.connect()
+        } catch (error: Throwable) {
+            scheduleReconnect(session, epoch, error.message ?: "CommandClient connection failed")
         }
     }
-    override fun setDefaultLogLevel(level: Int) {}
-    override fun clearLogs() {}
-    override fun writeLogs(messageList: LogIterator?) {}
-    override fun writeStatus(message: StatusMessage) {
-        // CommandStatus раз в statusInterval — берём мгновенную скорость up/down (байт/с).
-        val up = try { message.uplink } catch (_: Throwable) { 0L }
-        val down = try { message.downlink } catch (_: Throwable) { 0L }
-        main.post { snapshot = snapshot.copy(up = up, down = down, connected = true) }
-    }
-    override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
-    override fun updateClashMode(newMode: String) {}
-    override fun writeConnectionEvents(events: ConnectionEvents?) {}
 
-    override fun writeGroups(message: OutboundGroupIterator?) {
-        if (message == null) return
-        val delays = HashMap<String, Int>()
+    private fun requestProbe(session: Long, manual: Boolean) {
+        if (!isCurrent(session)) return
+        if (!canProbe()) {
+            publish(session) {
+                it.copy(
+                    phase = ProbePhase.Ready,
+                    lastError = if (manual) "В режиме WARP Direct proxy-пинги не используются" else null,
+                )
+            }
+            return
+        }
+        val current = client
+        if (current == null) {
+            scheduleReconnect(session, currentClientEpoch, "Монитор ядра ещё не подключён")
+            return
+        }
+        val epoch = currentClientEpoch
+        if (!isCurrent(session, epoch) || client !== current) return
+
+        val probeCycle = cycle.incrementAndGet()
+        activeCycle = probeCycle
+        publish(session, epoch) {
+            it.copy(
+                phase = ProbePhase.Testing,
+                probeCycle = probeCycle,
+                lastError = null,
+            )
+        }
+        timeoutFuture?.cancel(false)
+        runCatching { current.urlTest(AUTO_GROUP) }
+            .onFailure { error ->
+                publish(session, epoch) {
+                    it.copy(
+                        phase = ProbePhase.Error,
+                        lastError = error.message ?: "Не удалось запустить проверку",
+                    )
+                }
+                return
+            }
+
+        executor.schedule({
+            if (isCurrent(session, epoch) && activeCycle == probeCycle && resultCycle < probeCycle) {
+                runCatching { client?.urlTest(AUTO_GROUP) }
+            }
+        }, RETRY_DELAY_MS, TimeUnit.MILLISECONDS)
+
+        timeoutFuture = executor.schedule({
+            if (!isCurrent(session, epoch) || activeCycle != probeCycle) return@schedule
+            publish(session, epoch) { currentSnapshot ->
+                if (currentSnapshot.probeCycle != probeCycle || !currentSnapshot.testing) {
+                    currentSnapshot
+                } else if (currentSnapshot.delays.values.any(::validDelay)) {
+                    currentSnapshot.copy(
+                        phase = ProbePhase.Partial,
+                        lastError = "Часть нод не вернула задержку",
+                    )
+                } else {
+                    currentSnapshot.copy(
+                        phase = ProbePhase.Error,
+                        lastError = "Проверка задержки не ответила за ${PROBE_TIMEOUT_MS / 1000} с",
+                    )
+                }
+            }
+        }, PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    }
+
+    private fun handleConnected(session: Long, epoch: Long) {
+        if (!isCurrent(session, epoch)) return
+        reconnectAttempt = 0
+        publish(session, epoch) {
+            it.copy(
+                connected = true,
+                phase = if (canProbe()) ProbePhase.Connecting else ProbePhase.Ready,
+                lastError = null,
+            )
+        }
+        if (canProbe()) {
+            executor.schedule({
+                if (isCurrent(session, epoch)) requestProbe(session, manual = false)
+            }, INITIAL_PROBE_DELAY_MS, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    private fun handleDisconnected(session: Long, epoch: Long, message: String?) {
+        if (!isCurrent(session, epoch)) return
+        client = null
+        scheduleReconnect(session, epoch, message?.takeIf(String::isNotBlank) ?: "Монитор ядра отключён")
+    }
+
+    private fun scheduleReconnect(session: Long, epoch: Long, message: String) {
+        if (!isCurrent(session, epoch)) return
+        val delay = (RECONNECT_BASE_MS shl reconnectAttempt.coerceAtMost(4)).coerceAtMost(RECONNECT_MAX_MS)
+        reconnectAttempt++
+        publish(session, epoch) {
+            it.copy(
+                connected = false,
+                phase = ProbePhase.Connecting,
+                lastError = message,
+            )
+        }
+        scheduleConnect(session, delay)
+    }
+
+    private fun handleStatus(session: Long, epoch: Long, message: StatusMessage) {
+        if (!isCurrent(session, epoch)) return
+        val up = runCatching { message.uplink }.getOrDefault(0L)
+        val down = runCatching { message.downlink }.getOrDefault(0L)
+        publish(session, epoch) { it.copy(up = up, down = down, connected = true) }
+    }
+
+    private fun handleGroups(session: Long, epoch: Long, message: OutboundGroupIterator?) {
+        if (!isCurrent(session, epoch) || message == null) return
+        val completedCycle = activeCycle
+        val delays = linkedMapOf<String, Int>()
         var selectorNow: String? = null
         var autoNow: String? = null
         try {
             val groups = ArrayList<OutboundGroup>()
-            while (message.hasNext()) groups.add(message.next())
-            for (g in groups) {
-                when (g.tag) {
-                    "proxy" -> selectorNow = g.selected
-                    "auto" -> {
-                        autoNow = g.selected
-                        val items = g.items
+            while (message.hasNext()) groups += message.next()
+            groups.forEach { group ->
+                when (group.tag) {
+                    SELECTOR_GROUP -> selectorNow = group.selected
+                    AUTO_GROUP -> {
+                        autoNow = group.selected
+                        val items = group.items
                         while (items.hasNext()) {
-                            val it = items.next()
-                            delays[it.tag] = it.urlTestDelay
+                            val item = items.next()
+                            delays[item.tag] = item.urlTestDelay
                         }
                     }
                 }
             }
-        } catch (_: Throwable) { return }
-        main.post {
-            snapshot = snapshot.copy(
-                delays = delays, selectorNow = selectorNow, autoNow = autoNow,
-                connected = true, testing = false,
+        } catch (_: Throwable) {
+            return
+        }
+
+        if (!isCurrent(session, epoch)) return
+        if (delays.isNotEmpty()) resultCycle = completedCycle
+        publish(session, epoch) { previous ->
+            val expectedTags = Store.supportedActiveNodes().map { ConfigBuilder.tagOf(it) }.toSet()
+            val currentDelays = delays.filterKeys { it in expectedTags }
+            val allReturned = expectedTags.isNotEmpty() && expectedTags.all(currentDelays::containsKey)
+            val anyReturned = currentDelays.isNotEmpty()
+            val phase = when {
+                !canProbe() -> ProbePhase.Ready
+                allReturned -> ProbePhase.Ready
+                anyReturned -> ProbePhase.Partial
+                previous.testing -> ProbePhase.Testing
+                else -> previous.phase
+            }
+            previous.copy(
+                delays = if (anyReturned) currentDelays else previous.delays,
+                selectorNow = selectorNow ?: previous.selectorNow,
+                autoNow = autoNow ?: previous.autoNow,
+                connected = true,
+                phase = phase,
+                probeCycle = completedCycle,
+                measuredAtMs = if (anyReturned) System.currentTimeMillis() else previous.measuredAtMs,
+                lastError = when {
+                    allReturned -> null
+                    anyReturned -> "Получены не все результаты"
+                    else -> previous.lastError
+                },
             )
         }
     }
+
+    private fun canProbe(): Boolean =
+        TunnelModes.current() != TunnelMode.WARP_DIRECT && Store.supportedActiveNodes().isNotEmpty()
+
+    private fun isCurrent(session: Long): Boolean = running && session == currentGeneration
+
+    private fun isCurrent(session: Long, epoch: Long): Boolean =
+        isCurrent(session) && epoch == currentClientEpoch
+
+    private fun publish(session: Long, transform: (Snapshot) -> Snapshot) {
+        main.post {
+            if (isCurrent(session)) snapshot = transform(snapshot)
+        }
+    }
+
+    private fun publish(session: Long, epoch: Long, transform: (Snapshot) -> Snapshot) {
+        main.post {
+            if (isCurrent(session, epoch)) snapshot = transform(snapshot)
+        }
+    }
+
+    private fun publishStopped(session: Long) {
+        main.post {
+            if (!running && currentGeneration == session) snapshot = Snapshot()
+        }
+    }
+
+    private class SessionHandler(
+        private val session: Long,
+        private val epoch: Long,
+    ) : CommandClientHandler {
+        override fun connected() = handleConnected(session, epoch)
+        override fun disconnected(message: String?) = handleDisconnected(session, epoch, message)
+        override fun setDefaultLogLevel(level: Int) = Unit
+        override fun clearLogs() = Unit
+        override fun writeLogs(messageList: LogIterator?) = Unit
+        override fun writeStatus(message: StatusMessage) = handleStatus(session, epoch, message)
+        override fun initializeClashMode(modeList: StringIterator, currentMode: String) = Unit
+        override fun updateClashMode(newMode: String) = Unit
+        override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
+        override fun writeGroups(message: OutboundGroupIterator?) = handleGroups(session, epoch, message)
+    }
+
+    private fun validDelay(value: Int): Boolean = value in 1 until INVALID_DELAY
+
+    private const val SELECTOR_GROUP = "proxy"
+    private const val AUTO_GROUP = "auto"
+    private const val INVALID_DELAY = 65_000
+    private const val STATUS_INTERVAL_NS = 1_000_000_000L
+    private const val INITIAL_PROBE_DELAY_MS = 350L
+    private const val RETRY_DELAY_MS = 2_000L
+    private const val PROBE_TIMEOUT_MS = 10_000L
+    private const val RECONNECT_BASE_MS = 500L
+    private const val RECONNECT_MAX_MS = 8_000L
 }

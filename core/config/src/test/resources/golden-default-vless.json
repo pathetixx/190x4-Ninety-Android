@@ -1,0 +1,50 @@
+{
+  "log": {"level": "info", "timestamp": true},
+  "dns": {
+    "servers": [
+      {"type": "https", "server": "1.1.1.1", "path": "/dns-query", "tag": "dns-remote", "domain_resolver": "dns-direct", "detour": "proxy"},
+      {"type": "udp", "server": "77.88.8.8", "tag": "dns-direct"}
+    ],
+    "strategy": "ipv4_only",
+    "final": "dns-remote"
+  },
+  "inbounds": [
+    {"type": "tun", "tag": "tun-in", "address": ["172.19.0.1/30"], "mtu": 9000, "auto_route": true, "strict_route": false, "stack": "mixed"}
+  ],
+  "outbounds": [
+    {"type": "selector", "tag": "proxy", "outbounds": ["auto", "nvless"], "default": "nvless", "interrupt_exist_connections": true},
+    {"type": "urltest", "tag": "auto", "outbounds": ["nvless"], "url": "https://www.gstatic.com/generate_204", "interval": "600s", "tolerance": 50, "interrupt_exist_connections": false},
+    {
+      "tag": "nvless",
+      "server": "2001:db8::1",
+      "server_port": 443,
+      "type": "vless",
+      "uuid": "11111111-2222-3333-4444-555555555555",
+      "packet_encoding": "xudp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "edge.example.com",
+        "utls": {"enabled": true, "fingerprint": "chrome"},
+        "reality": {"enabled": true, "public_key": "public-key", "short_id": "abcd"}
+      },
+      "transport": {"type": "xhttp", "path": "/api", "host": "cdn.example.com", "mode": "auto", "xPaddingBytes": "100-200"}
+    },
+    {"type": "direct", "tag": "direct"}
+  ],
+  "route": {
+    "rules": [
+      {"action": "sniff"},
+      {"protocol": "dns", "action": "hijack-dns"},
+      {"ip_is_private": true, "outbound": "direct"}
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true,
+    "default_domain_resolver": {"server": "dns-direct"}
+  },
+  "experimental": {
+    "cache_file": {"enabled": true, "store_rdrc": true},
+    "unified_delay": {"enabled": true},
+    "monitoring": {"interval": "15m", "idle_timeout": "45s"}
+  }
+}

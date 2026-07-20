@@ -1,7 +1,10 @@
 name: Build Ninety Android
 
-# Релиз — только на push semver-тега vX.Y.Z. Для ad-hoc проверки — workflow_dispatch.
+# Core/runtime/quality and data tests fail fast before the expensive native build.
+# Release: only on semver tag vX.Y.Z; workflow_dispatch is for ad-hoc verification.
 on:
+  pull_request:
+    branches: [main]
   push:
     tags: ['v*']
   workflow_dispatch:
@@ -10,23 +13,104 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.sha }}
-  cancel-in-progress: false
+  # Suffix isolates the split-job pipeline from cancelled legacy runs.
+  group: ${{ github.workflow }}-${{ github.ref }}-split-jobs
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Ядро: hiddify-sing-box. Тег перемещаем → пин на конкретный SHA (supply-chain).
   HSB_TAG: v1.13.0.h5
   HSB_SHA: 9b6b004adfb079db2134b682f9b4ff42434c2f38
   NDK_VERSION: 28.0.13004108
-  # Node20 deprecated на раннерах (форс Node24 с июня 2026). checkout@v5 уже на node24;
-  # остальные actions (setup-go/java/gradle/upload-artifact/gh-release) ещё просят node20
-  # в action.yml — этот флаг гонит их на node24 сейчас, валидируя совместимость до форса.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
+  core:
+    name: core tests
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Model, parser, config, runtime and quality tests
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :core:model:test :core:parser:test :core:config:test :core:runtime:test :core:quality:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
+
+      - name: Upload PR core diagnostics
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-core-diagnostics-${{ github.event.pull_request.number }}
+          if-no-files-found: warn
+          path: |
+            ci-core-tests.log
+            core/model/build/reports/tests/**
+            core/parser/build/reports/tests/**
+            core/config/build/reports/tests/**
+            core/runtime/build/reports/tests/**
+            core/quality/build/reports/tests/**
+
+  data:
+    name: data migration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 35
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Room mapping and normalization tests
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :data:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee ci-data-tests.log
+
+      - name: Upload PR data diagnostics and schemas
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-data-diagnostics-${{ github.event.pull_request.number }}
+          if-no-files-found: warn
+          path: |
+            ci-data-tests.log
+            data/build/reports/tests/**
+            data/schemas/**
+
+  android:
+    name: android build
+    needs: [core, data]
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -51,7 +135,15 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" "ndk;${NDK_VERSION}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
+      - name: Restore pinned libbox.aar
+        id: libbox_cache
+        uses: actions/cache@v4
+        with:
+          path: app/libs/libbox.aar
+          key: libbox-${{ runner.os }}-${{ env.HSB_SHA }}-${{ env.NDK_VERSION }}-gomobile-v0.1.11
+
       - name: Build libbox.aar (gomobile bind, hiddify-sing-box)
+        if: steps.libbox_cache.outputs.cache-hit != 'true'
         run: |
           set -e
           echo "Cloning hiddify-sing-box ${HSB_TAG}…"
@@ -59,20 +151,16 @@ jobs:
           cd hsb
           HEAD="$(git rev-parse HEAD)"
           if [ "$HEAD" != "${HSB_SHA}" ]; then
-            echo "::error::hiddify-sing-box ${HSB_TAG} = $HEAD, ожидался ${HSB_SHA} (тег перемещён?)"
+            echo "::error::hiddify-sing-box ${HSB_TAG} = $HEAD, expected ${HSB_SHA}"
             exit 1
           fi
           echo "Verified hiddify-sing-box commit $HEAD."
 
-          # gomobile/gobind — форк sagernet (sing-box собирается только им).
           go install -v github.com/sagernet/gomobile/cmd/gomobile@v0.1.11
           go install -v github.com/sagernet/gomobile/cmd/gobind@v0.1.11
           export PATH="$PATH:$(go env GOPATH)/bin"
 
-          # build_libbox требует java "openjdk 17"; temurin 17 подходит.
           java --version
-
-          # Собирает libbox.aar (API23) + libbox-legacy.aar (API21).
           go run ./cmd/internal/build_libbox -target android
 
           ls -lh libbox*.aar
@@ -80,23 +168,76 @@ jobs:
           cp libbox.aar "$GITHUB_WORKSPACE/app/libs/libbox.aar"
           echo "libbox.aar -> app/libs/ ($(du -h libbox.aar | cut -f1))"
 
+      - name: Verify libbox.aar
+        run: test -s app/libs/libbox.aar && ls -lh app/libs/libbox.aar
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
+      - name: Assemble debug APK
+        id: assemble_debug
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee ci-assemble-debug.log
+
+      - name: Android lint
+        id: lint_debug
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:lintDebug --no-daemon --stacktrace 2>&1 | tee ci-lint-debug.log
+
+      - name: Upload PR Android diagnostics
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-build-diagnostics-${{ github.event.pull_request.number }}
+          if-no-files-found: warn
+          path: |
+            ci-assemble-debug.log
+            ci-lint-debug.log
+            app/build/reports/lint-results-debug.*
+            app/build/reports/lint-results-debug/**
+
+      - name: Fail when Android verification failed
+        if: always()
+        env:
+          ASSEMBLE_DEBUG: ${{ steps.assemble_debug.outcome }}
+          LINT_DEBUG: ${{ steps.lint_debug.outcome }}
+        run: |
+          echo "assemble debug: $ASSEMBLE_DEBUG"
+          echo "lint debug:     $LINT_DEBUG"
+          if [ "$ASSEMBLE_DEBUG" != "success" ] || [ "$LINT_DEBUG" != "success" ]; then
+            exit 1
+          fi
+
+      - name: Upload PR debug APKs
+        if: github.event_name == 'pull_request' && steps.assemble_debug.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninety-android-debug-${{ github.event.pull_request.number }}
+          path: app/build/outputs/apk/debug/*.apk
+
       - name: Decode release keystore
+        if: github.event_name != 'pull_request'
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/ninety-release.jks"
 
       - name: Assemble release APKs (per-ABI)
+        if: github.event_name != 'pull_request'
         env:
           NINETY_KEYSTORE: ${{ runner.temp }}/ninety-release.jks
           NINETY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           NINETY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Stage APKs
-        id: stage
+      - name: Stage release APKs
+        if: github.event_name != 'pull_request'
         run: |
           set -e
           VER="${GITHUB_REF_NAME#v}"
@@ -108,7 +249,8 @@ jobs:
             echo "staged ninety-android-${VER}-${ABI}.apk ($(du -h "$DIR/app-${ABI}-release.apk" | cut -f1))"
           done
 
-      - name: Upload artifact
+      - name: Upload release artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: ninety-android-apk
