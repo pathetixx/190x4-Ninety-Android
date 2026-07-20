@@ -1,6 +1,8 @@
 package pw.x4.ninety.vpn
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -45,6 +47,7 @@ object WarpRuntime {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val operation = Mutex()
+    private val main = Handler(Looper.getMainLooper())
     private lateinit var context: Context
     private lateinit var store: WarpStore
     @Volatile private var registration: WarpRegistration? = null
@@ -116,8 +119,10 @@ object WarpRuntime {
                     ?.let { runCatching { WarpApi.delete(it.registrationId, it.accessToken) } }
                 store.clear()
                 registration = null
-                Options.update(context) { it.copy(warpEnabled = false) }
-                publishAsync(busy = false)
+                withContext(Dispatchers.Main.immediate) {
+                    Options.update(context) { it.copy(warpEnabled = false) }
+                    publishNow(busy = false)
+                }
                 reloadIfActive()
             }
         }
@@ -142,7 +147,7 @@ object WarpRuntime {
     }
 
     private fun publishAsync(busy: Boolean, error: String? = null) {
-        scope.launch { withContext(Dispatchers.Main.immediate) { publishNow(busy, error) } }
+        main.post { publishNow(busy, error) }
     }
 }
 
@@ -163,8 +168,7 @@ private object WarpApi {
             .put("model", "Ninety/190x4")
             .put("locale", "en_US")
             .put("warp_enabled", true)
-        val request = requestBuilder("$BASE/reg").post(body.toString().toRequestBody(jsonType)).build()
-        val root = execute(request)
+        val root = execute(requestBuilder("$BASE/reg").post(body.toString().toRequestBody(jsonType)).build())
         val account = root.getJSONObject("account")
         val config = root.getJSONObject("config")
         val peer = config.getJSONArray("peers").getJSONObject(0)
@@ -186,10 +190,11 @@ private object WarpApi {
 
     fun activate(source: WarpRegistration, license: String): WarpRegistration {
         val body = JSONObject().put("license", license)
-        val request = requestBuilder("$BASE/reg/${source.registrationId}/account", source.accessToken)
-            .patch(body.toString().toRequestBody(jsonType))
-            .build()
-        val root = execute(request)
+        val root = execute(
+            requestBuilder("$BASE/reg/${source.registrationId}/account", source.accessToken)
+                .patch(body.toString().toRequestBody(jsonType))
+                .build(),
+        )
         return source.copy(
             license = root.optString("license").ifBlank { license },
             warpPlus = root.optBoolean("warp_plus", source.warpPlus),
@@ -214,8 +219,7 @@ private object WarpApi {
         if (body.contentLength() > MAX_BODY) error("Cloudflare response is too large")
         val bytes = body.source().readByteArray(MAX_BODY + 1)
         if (bytes.size > MAX_BODY) error("Cloudflare response is too large")
-        val text = bytes.toString(Charsets.UTF_8)
-        if (!response.isSuccessful) error("Cloudflare ${response.code}: ${text.take(240)}")
-        JSONObject(text)
+        if (!response.isSuccessful) error("Cloudflare request failed with HTTP ${response.code}")
+        JSONObject(bytes.toString(Charsets.UTF_8))
     }
 }
