@@ -140,7 +140,9 @@ fun Modifier.desktopNavRow(active: Boolean, shape: Shape): Modifier {
 }
 
 val DesktopActiveNavShape = GenericShape { size, _ ->
-    val cut = 26.dp.toPx().coerceAtMost(size.height)
+    // GenericShape has no Density receiver. Using the desktop 26/66 row ratio keeps
+    // the cut identical at every Android density instead of treating 26px as 26dp.
+    val cut = (size.height * (26f / 66f)).coerceAtMost(size.height)
     moveTo(0f, 0f)
     lineTo(size.width - cut, 0f)
     lineTo(size.width, cut)
