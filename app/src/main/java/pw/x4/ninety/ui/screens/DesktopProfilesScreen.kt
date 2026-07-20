@@ -1,8 +1,6 @@
 package pw.x4.ninety.ui.screens
 
 import android.content.Context
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,10 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.data.Importer
-import pw.x4.ninety.data.Profile
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.PillButton
 import pw.x4.ninety.ui.components.desktopCard
@@ -40,14 +36,13 @@ import pw.x4.ninety.ui.layout.NinetyLayoutMetrics
 import pw.x4.ninety.ui.layout.NinetyPage
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
-import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyRadius
-import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
 import pw.x4.ninety.vpn.NinetyVpnService
 import pw.x4.ninety.vpn.TunnelModes
 import pw.x4.ninety.vpn.VpnController
 
+/** Desktop Profiles screen: header/actions followed by a single `.prof-list` column. */
 @Composable
 fun DesktopProfilesScreen(metrics: NinetyLayoutMetrics) {
     val context = LocalContext.current
@@ -57,68 +52,50 @@ fun DesktopProfilesScreen(metrics: NinetyLayoutMetrics) {
 
     NinetyPage(metrics) {
         Column(Modifier.fillMaxSize().padding(top = if (metrics.isCompact) 16.dp else 24.dp)) {
-            Column {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                    Column(Modifier.weight(1f)) {
-                        Text("SUBSCRIPTIONS · ${profiles.size}", style = KickerStyle, color = Ink.TextFaint)
-                        Spacer(Modifier.height(5.dp))
-                        Text("Профили", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
-                        Spacer(Modifier.height(5.dp))
-                        Text(
-                            "Подписки и одиночные конфиги в том же operational формате, что desktop Ninety.",
-                            style = NinetyTypography.bodyMedium,
-                            color = Ink.TextMid,
-                        )
-                    }
-                    if (!metrics.isCompact) {
-                        Text(
-                            Store.activeProfile()?.name?.uppercase() ?: "NO ACTIVE PROFILE",
-                            style = KickerStyle,
-                            color = NinetyState.pack.material.secondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (profiles.any { it.isSub && it.url.isNotBlank() }) {
-                        PillButton(if (busy) "Обновляю…" else "Обновить все", enabled = !busy) {
-                            Importer.refreshAll(
-                                onLoading = { busy = true },
-                                onDone = { count, error ->
-                                    busy = false
-                                    desktopProfileToast(context, error ?: "Обновлено нод: $count")
-                                },
-                            )
-                        }
-                    }
-                    PillButton("Добавить профиль") { showAdd = true }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text("SUBSCRIPTIONS", style = KickerStyle, color = Ink.TextFaint)
+                    Spacer(Modifier.height(5.dp))
+                    Text("Профили", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        "Подписки и одиночные конфиги. Активный профиль используется при подключении.",
+                        style = NinetyTypography.bodyMedium,
+                        color = Ink.TextMid,
+                    )
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (profiles.any { it.isSub && it.url.isNotBlank() }) {
+                    PillButton(if (busy) "Обновляю…" else "Обновить", enabled = !busy) {
+                        Importer.refreshAll(
+                            onLoading = { busy = true },
+                            onDone = { count, error ->
+                                busy = false
+                                desktopProfileToast(context, error ?: "Обновлено нод: $count")
+                            },
+                        )
+                    }
+                }
+                PillButton("Добавить") { showAdd = true }
+            }
             Spacer(Modifier.height(16.dp))
-            ProfilesSummaryBar(profiles)
-            Spacer(Modifier.height(14.dp))
 
             if (profiles.isEmpty()) {
                 DesktopEmptyProfiles(Modifier.fillMaxSize()) { showAdd = true }
             } else {
                 LazyVerticalGrid(
-                    columns = when {
-                        metrics.isExpanded -> GridCells.Fixed(1)
-                        metrics.isCompact -> GridCells.Fixed(1)
-                        else -> GridCells.Adaptive(330.dp)
-                    },
+                    columns = GridCells.Fixed(1),
                     modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(11.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 28.dp),
                 ) {
                     items(profiles, key = { it.id }) { profile ->
                         DesktopProfileEntry(
                             profile = profile,
                             active = profile.id == Store.activeProfileId,
-                            compact = !metrics.isExpanded,
+                            compact = metrics.isCompact,
                             onSelect = { selectDesktopProfile(context, profile.id) },
                             onDelete = { deleteDesktopProfile(context, profile.id) },
                         )
@@ -129,44 +106,6 @@ fun DesktopProfilesScreen(metrics: NinetyLayoutMetrics) {
     }
 
     if (showAdd) DesktopAddProfileDialog(context, onDismiss = { showAdd = false })
-}
-
-@Composable
-private fun ProfilesSummaryBar(profiles: List<Profile>) {
-    val totalNodes = profiles.sumOf { Store.nodeCount(it.id) }
-    val subscriptions = profiles.count(Profile::isSub)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(NinetyRadius.sm))
-            .desktopCard()
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ProfileSummaryMetric("PROFILES", profiles.size.toString())
-        ProfileSummaryMetric("NODES", totalNodes.toString())
-        ProfileSummaryMetric("SUBS", subscriptions.toString())
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-            Text("ACTIVE", style = KickerStyle, color = Ink.TextFaint)
-            Text(
-                Store.activeProfile()?.name ?: "—",
-                style = MonoStyle,
-                color = NinetyState.pack.material.secondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ProfileSummaryMetric(label: String, value: String) {
-    Column {
-        Text(label, style = KickerStyle, color = Ink.TextFaint)
-        Spacer(Modifier.height(3.dp))
-        Text(value, style = NinetyTypography.titleMedium, color = Ink.TextHi)
-    }
 }
 
 @Composable
