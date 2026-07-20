@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,7 +53,6 @@ import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Updater
 import pw.x4.ninety.ui.components.PillButton
-import pw.x4.ninety.ui.components.ScreenHeader
 import pw.x4.ninety.ui.components.SurfaceCard
 import pw.x4.ninety.ui.components.ToggleRow
 import pw.x4.ninety.ui.icons.NinetyIcons
@@ -69,23 +67,23 @@ import pw.x4.ninety.ui.theme.NinetyTypography
 import pw.x4.ninety.ui.theme.ThemePack
 import pw.x4.ninety.ui.theme.ThemePacks
 
-private data class AdaptiveSettingSection(
+private data class SettingSection(
     val key: String,
     val title: String,
     val hint: String,
     val icon: ImageVector,
 )
 
-private val AdaptiveSettingSections = listOf(
-    AdaptiveSettingSection("general", "Общие", "Запуск, обновления и диагностика соединения", SettingsIcons.General),
-    AdaptiveSettingSection("appearance", "Оформление", "Полные палитры desktop-Ninety", SettingsIcons.Theme),
-    AdaptiveSettingSection("routing", "Маршрутизация", "Регион, LAN, реклама и пользовательские правила", SettingsIcons.Routing),
-    AdaptiveSettingSection("dns", "DNS", "Remote/Direct DNS и Fake-DNS", SettingsIcons.Dns),
-    AdaptiveSettingSection("inbound", "Локальный доступ", "MTU, TUN stack и strict route", SettingsIcons.Inbound),
-    AdaptiveSettingSection("tls", "TLS-фрагментация", "ClientHello, padding и SNI", SettingsIcons.Tls),
-    AdaptiveSettingSection("mux", "Мультиплексор", "Параллельные потоки транспорта", SettingsIcons.Mux),
-    AdaptiveSettingSection("logs", "Логи", "Отчёты ядра и аварий", NinetyIcons.Logs),
-    AdaptiveSettingSection("about", "О программе", "Версия, обновления и репозиторий", SettingsIcons.Info),
+private val SettingSections = listOf(
+    SettingSection("general", "Общие", "Запуск, ping и журнал ядра", SettingsIcons.General),
+    SettingSection("appearance", "Оформление", "Палитра и визуальная система", SettingsIcons.Theme),
+    SettingSection("routing", "Маршрутизация", "Правила, регион, LAN и WARP", SettingsIcons.Routing),
+    SettingSection("dns", "DNS", "Remote, direct и Fake-DNS", SettingsIcons.Dns),
+    SettingSection("inbound", "TUN", "MTU, stack и strict route", SettingsIcons.Inbound),
+    SettingSection("tls", "TLS", "Фрагментация и padding", SettingsIcons.Tls),
+    SettingSection("mux", "Multiplex", "Параллельные transport streams", SettingsIcons.Mux),
+    SettingSection("logs", "Логи", "Runtime, stderr, crash и logcat", NinetyIcons.Logs),
+    SettingSection("about", "О программе", "Версия, обновления и репозиторий", SettingsIcons.Info),
 )
 
 @Composable
@@ -98,180 +96,185 @@ fun SettingsScreen(metrics: NinetyLayoutMetrics) {
         if (metrics.isExpanded) {
             Row(
                 Modifier.fillMaxSize().padding(top = 22.dp, bottom = 22.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                AdaptiveSettingsNavigation(
+                SettingsNavigation(
                     selected = selected ?: "general",
                     onSelect = { selected = it },
                     modifier = Modifier.width(270.dp).fillMaxHeight(),
                 )
-                AdaptiveSettingsSectionPane(
+                SettingsDesktopPane(
                     sectionKey = selected ?: "general",
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
             }
         } else if (selected == null) {
-            AdaptiveSettingsMenu(onOpen = { selected = it })
+            SettingsMenu(onOpen = { selected = it })
         } else {
-            AdaptiveSettingsMobileSection(
-                sectionKey = selected!!,
-                onBack = { selected = null },
-            )
+            SettingsMobilePane(sectionKey = selected!!, onBack = { selected = null })
         }
     }
 }
 
 @Composable
-private fun AdaptiveSettingsMenu(onOpen: (String) -> Unit) {
+private fun SettingsMenu(onOpen: (String) -> Unit) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 22.dp, bottom = 28.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 18.dp, bottom = 28.dp),
     ) {
-        ScreenHeader(
-            kicker = "System · Preferences",
-            title = "Настройки",
-            sub = "Параметры Android-клиента и sing-box. Изменения ядра применяются при reload.",
-        )
+        SettingsTitle("SYSTEM · SETTINGS", "Настройки", "Все controls адаптируются под ширину экрана.")
         Spacer(Modifier.height(18.dp))
-        AdaptiveSettingSections.forEach { section ->
-            AdaptiveSettingsNavCard(section, selected = false) { onOpen(section.key) }
+        SettingSections.forEach { section ->
+            SettingsNavCard(section, selected = false) { onOpen(section.key) }
             Spacer(Modifier.height(9.dp))
         }
     }
 }
 
 @Composable
-private fun AdaptiveSettingsNavigation(
+private fun SettingsNavigation(
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(Ink.Ink1)
-            .border(1.dp, Ink.Line1, RoundedCornerShape(16.dp))
+            .border(1.dp, Ink.Line1, RoundedCornerShape(18.dp))
             .padding(12.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        Text("SYSTEM · SETTINGS", style = KickerStyle, color = Ink.TextFaint)
+        Text("NINETY · SYSTEM", style = KickerStyle, color = Ink.TextFaint)
         Spacer(Modifier.height(6.dp))
         Text("Параметры", style = NinetyTypography.titleLarge, color = Ink.TextHi)
         Spacer(Modifier.height(14.dp))
-        AdaptiveSettingSections.forEach { section ->
-            AdaptiveSettingsNavCard(section, selected = section.key == selected) { onSelect(section.key) }
+        SettingSections.forEach { section ->
+            SettingsNavCard(section, selected = section.key == selected) { onSelect(section.key) }
             Spacer(Modifier.height(7.dp))
         }
     }
 }
 
 @Composable
-private fun AdaptiveSettingsNavCard(
-    section: AdaptiveSettingSection,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
+private fun SettingsNavCard(section: SettingSection, selected: Boolean, onClick: () -> Unit) {
     val pack = NinetyState.pack
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(11.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(if (selected) pack.accentSoft else Ink.Ink2)
-            .border(1.dp, if (selected) pack.accentSoft else Ink.Line1, RoundedCornerShape(11.dp))
+            .border(1.dp, if (selected) pack.accent else Ink.Line1, RoundedCornerShape(12.dp))
             .clickable { onClick() }
             .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(36.dp).background(if (selected) pack.accentSoft else Ink.Ink3, RoundedCornerShape(9.dp)),
+            Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
+                .background(if (selected) pack.accentSoft else Ink.Ink3),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(section.icon, null, tint = if (selected) pack.accentBright else Ink.TextMid, modifier = Modifier.size(18.dp))
+            Icon(section.icon, null, tint = if (selected) pack.accentBright else Ink.TextMid, modifier = Modifier.size(19.dp))
         }
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
             Text(section.title, style = NinetyTypography.titleMedium, color = Ink.TextHi)
+            Spacer(Modifier.height(2.dp))
             Text(section.hint, style = MonoStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (!selected) Icon(NinetyIcons.ChevronRight, null, tint = Ink.TextFaint, modifier = Modifier.size(15.dp))
+        if (!selected) Icon(NinetyIcons.ChevronRight, null, tint = Ink.TextFaint, modifier = Modifier.size(16.dp))
     }
 }
 
 @Composable
-private fun AdaptiveSettingsMobileSection(sectionKey: String, onBack: () -> Unit) {
-    val section = AdaptiveSettingSections.first { it.key == sectionKey }
+private fun SettingsDesktopPane(sectionKey: String, modifier: Modifier = Modifier) {
+    val section = SettingSections.first { it.key == sectionKey }
+    Column(
+        modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(Ink.Ink0)
+            .border(1.dp, Ink.Line1, RoundedCornerShape(18.dp))
+            .padding(horizontal = 22.dp),
+    ) {
+        Spacer(Modifier.height(20.dp))
+        SettingsTitle("SETTINGS · ${section.key.uppercase()}", section.title, section.hint)
+        Spacer(Modifier.height(15.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line1))
+        SettingsContent(
+            sectionKey,
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 18.dp, bottom = 28.dp),
+        )
+    }
+}
+
+@Composable
+private fun SettingsMobilePane(sectionKey: String, onBack: () -> Unit) {
+    val section = SettingSections.first { it.key == sectionKey }
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp),
+            Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).clickable { onBack() },
+                Modifier.size(42.dp).clip(CircleShape).background(Ink.Ink2).clickable { onBack() },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(SettingsIcons.ArrowLeft, "Назад", tint = Ink.TextMid, modifier = Modifier.size(21.dp))
             }
-            Spacer(Modifier.width(6.dp))
-            Column {
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
                 Text(section.title, style = NinetyTypography.headlineMedium, color = Ink.TextHi)
-                Text(section.hint, style = MonoStyle, color = Ink.TextLo)
+                Text(section.hint, style = MonoStyle, color = Ink.TextLo, maxLines = 2)
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line1))
-        AdaptiveSettingsContent(
-            sectionKey = sectionKey,
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 18.dp, bottom = 28.dp),
+        SettingsContent(
+            sectionKey,
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 18.dp, bottom = 30.dp),
         )
     }
 }
 
 @Composable
-private fun AdaptiveSettingsSectionPane(sectionKey: String, modifier: Modifier = Modifier) {
-    val section = AdaptiveSettingSections.first { it.key == sectionKey }
-    Column(
-        modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(Ink.Ink0)
-            .border(1.dp, Ink.Line1, RoundedCornerShape(16.dp))
-            .padding(horizontal = 22.dp),
-    ) {
-        Spacer(Modifier.height(20.dp))
-        ScreenHeader(kicker = "Settings · ${section.key}", title = section.title, sub = section.hint)
-        Spacer(Modifier.height(14.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line1))
-        AdaptiveSettingsContent(
-            sectionKey = sectionKey,
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 18.dp, bottom = 28.dp),
-        )
-    }
+private fun SettingsTitle(kicker: String, title: String, hint: String) {
+    Text(kicker, style = KickerStyle, color = Ink.TextFaint)
+    Spacer(Modifier.height(5.dp))
+    Text(title, style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+    Spacer(Modifier.height(5.dp))
+    Text(hint, style = NinetyTypography.bodyMedium, color = Ink.TextMid)
 }
 
 @Composable
-private fun AdaptiveSettingsContent(sectionKey: String, modifier: Modifier = Modifier) {
+private fun SettingsContent(sectionKey: String, modifier: Modifier = Modifier) {
     Column(modifier) {
         when (sectionKey) {
-            "general" -> AdaptiveGeneralSettings()
-            "appearance" -> AdaptiveAppearanceSettings()
-            "routing" -> AdaptiveRoutingSettings()
-            "dns" -> AdaptiveDnsSettings()
-            "inbound" -> AdaptiveInboundSettings()
-            "tls" -> AdaptiveTlsSettings()
-            "mux" -> AdaptiveMuxSettings()
-            "logs" -> AdaptiveLogsSettings()
-            "about" -> AdaptiveAboutSettings()
+            "general" -> GeneralSettings()
+            "appearance" -> AppearanceSettings()
+            "routing" -> RoutingSettings()
+            "dns" -> DnsSettings()
+            "inbound" -> InboundSettings()
+            "tls" -> TlsSettings()
+            "mux" -> MuxSettings()
+            "logs" -> LogsSettings()
+            "about" -> AboutSettings()
         }
     }
 }
 
 @Composable
-private fun AdaptiveGeneralSettings() {
+private fun GeneralSettings() {
     val context = LocalContext.current
     val prefs = Prefs.get(context)
     val options = Options.data
     var autoConnect by remember { mutableStateOf(prefs.autoConnect) }
     var autoUpdate by remember { mutableStateOf(prefs.autoUpdateCheck) }
 
+    SettingsCallout(
+        "PING · NATIVE URLTEST",
+        "Auto снова управляется штатным selector/urltest sing-box. Внешний Quality Engine больше не меняет ноду и не вызывает reload.",
+    )
+    SettingsGap()
     SurfaceCard {
-        ToggleRow("Автоподключение", autoConnect, "К последнему выбору при запуске") {
+        ToggleRow("Автоподключение", autoConnect, "Запускать последний готовый режим") {
             autoConnect = it
             prefs.autoConnect = it
         }
@@ -281,36 +284,40 @@ private fun AdaptiveGeneralSettings() {
         }
     }
     SettingsGap()
-    ApplyHint()
-    SettingsGap()
     SurfaceCard {
-        AdaptiveTextSetting("URL проверки", "Endpoint urltest", options.testUrl) {
+        TextSetting("URL проверки", "Endpoint для штатной группы urltest", options.testUrl) {
             Options.update(context) { current -> current.copy(testUrl = it) }
         }
-        AdaptiveNumberSetting("Интервал проверки", "30–3600 секунд", options.testIntervalSec, 30, 3600) {
+        FieldDivider()
+        NumberSetting("Интервал проверки", "30–3600 секунд", options.testIntervalSec, 30, 3600) {
             Options.update(context) { current -> current.copy(testIntervalSec = it) }
         }
-        AdaptiveSelectSetting("Уровень логов", "Подробность sing-box", options.logLevel, listOf("trace", "debug", "info", "warn", "error")) {
-            Options.update(context) { current -> current.copy(logLevel = it) }
-        }
-        ToggleRow("Отключить логи", options.logDisabled, "Диагностика ядра станет недоступна") {
+        FieldDivider()
+        SelectSetting(
+            "Уровень логов",
+            "Подробность журнала sing-box",
+            options.logLevel,
+            listOf("trace", "debug", "info", "warn", "error"),
+        ) { Options.update(context) { current -> current.copy(logLevel = it) } }
+        FieldDivider()
+        ToggleRow("Отключить логи", options.logDisabled, "Runtime-диагностика станет недоступна") {
             Options.update(context) { current -> current.copy(logDisabled = it) }
         }
     }
 }
 
 @Composable
-private fun AdaptiveAppearanceSettings() {
+private fun AppearanceSettings() {
     val context = LocalContext.current
     val prefs = Prefs.get(context)
     Text(
-        "Тема меняет материал поверхности, линии, текст и акцент. Выбор сохраняется автоматически.",
+        "Палитры сохранены, но экраны постепенно перестраиваются по структуре desktop-Ninety: control panels, hierarchy и status blocks.",
         style = NinetyTypography.bodyMedium,
         color = Ink.TextMid,
     )
     SettingsGap()
     ThemePacks.forEach { pack ->
-        AdaptiveThemeCard(pack, selected = pack.id == NinetyState.pack.id) {
+        ThemeCard(pack, selected = pack.id == NinetyState.pack.id) {
             NinetyState.pack = pack
             prefs.themePack = pack.id
         }
@@ -319,21 +326,18 @@ private fun AdaptiveAppearanceSettings() {
 }
 
 @Composable
-private fun AdaptiveThemeCard(pack: ThemePack, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
+private fun ThemeCard(pack: ThemePack, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(15.dp)
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(if (selected) pack.accentSoft else Ink.Ink2)
-            .border(1.dp, if (selected) pack.accent else Ink.Line2, shape)
-            .clickable { onClick() }
-            .padding(14.dp),
+        Modifier.fillMaxWidth().clip(shape)
+            .background(if (selected) pack.accentSoft else Ink.Ink1)
+            .border(1.dp, if (selected) pack.accent else Ink.Line1, shape)
+            .clickable { onClick() }.padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             listOf(pack.palette.ink0, pack.palette.ink2, pack.accent, pack.accentBright).forEach { color ->
-                Box(Modifier.size(22.dp).background(color, CircleShape).border(1.dp, Ink.Line2, CircleShape))
+                Box(Modifier.size(23.dp).background(color, CircleShape).border(1.dp, Ink.Line2, CircleShape))
             }
         }
         Spacer(Modifier.width(14.dp))
@@ -346,24 +350,34 @@ private fun AdaptiveThemeCard(pack: ThemePack, selected: Boolean, onClick: () ->
 }
 
 @Composable
-private fun AdaptiveRoutingSettings() {
+private fun RoutingSettings() {
     val context = LocalContext.current
     val options = Options.data
-    ApplyHint()
+    ReloadHint()
     SettingsGap()
     SurfaceCard {
-        AdaptiveSelectSetting("Регион", "Локальные geosite/geoip идут напрямую", options.region, listOf("other", "ru", "cn", "ir", "tr", "by"), REGION_LABELS_ADAPTIVE) {
-            Options.update(context) { current -> current.copy(region = it) }
-        }
-        ToggleRow("Блокировать рекламу", options.blockAds, "Rule sets рекламы и malware") {
+        SelectSetting(
+            "Регион",
+            "Локальные geosite/geoip идут напрямую",
+            options.region,
+            listOf("other", "ru", "cn", "ir", "tr", "by"),
+            REGION_LABELS,
+        ) { Options.update(context) { current -> current.copy(region = it) } }
+        FieldDivider()
+        ToggleRow("Блокировать рекламу", options.blockAds, "Rule sets рекламы, malware и phishing") {
             Options.update(context) { current -> current.copy(blockAds = it) }
         }
         ToggleRow("Обход LAN", options.bypassLan, "Приватные адреса идут напрямую") {
             Options.update(context) { current -> current.copy(bypassLan = it) }
         }
-        AdaptiveSelectSetting("Маршрут IPv6", "Стратегия выбора IP", options.ipv6Mode, listOf("disable", "enable", "prefer", "only"), IPV6_LABELS_ADAPTIVE) {
-            Options.update(context) { current -> current.copy(ipv6Mode = it) }
-        }
+        FieldDivider()
+        SelectSetting(
+            "Маршрут IPv6",
+            "Стратегия выбора IP",
+            options.ipv6Mode,
+            listOf("disable", "enable", "prefer", "only"),
+            IPV6_LABELS,
+        ) { Options.update(context) { current -> current.copy(ipv6Mode = it) } }
     }
     SettingsGap()
     RoutingRulesEditor(options.customRules) { rules ->
@@ -372,40 +386,48 @@ private fun AdaptiveRoutingSettings() {
 }
 
 @Composable
-private fun AdaptiveDnsSettings() {
+private fun DnsSettings() {
     val context = LocalContext.current
     val options = Options.data
-    ApplyHint()
+    ReloadHint()
     SettingsGap()
     SurfaceCard {
-        AdaptiveTextSetting("Remote DNS", "DNS для трафика через прокси", options.dnsRemote) {
+        TextSetting("Remote DNS", "DNS защищённого маршрута", options.dnsRemote) {
             Options.update(context) { current -> current.copy(dnsRemote = it) }
         }
-        AdaptiveTextSetting("Direct DNS", "DNS для прямого трафика", options.dnsDirect) {
+        FieldDivider()
+        TextSetting("Direct DNS", "DNS прямого маршрута", options.dnsDirect) {
             Options.update(context) { current -> current.copy(dnsDirect = it) }
         }
+        FieldDivider()
         ToggleRow("Независимый DNS-кэш", options.independentCache, "Раздельный кэш remote/direct") {
             Options.update(context) { current -> current.copy(independentCache = it) }
         }
-        ToggleRow("Fake-DNS", options.fakeDns, "Внутренний маппинг доменов в TUN") {
+        ToggleRow("Fake-DNS", options.fakeDns, "Внутренний mapping доменов в TUN") {
             Options.update(context) { current -> current.copy(fakeDns = it) }
         }
     }
 }
 
 @Composable
-private fun AdaptiveInboundSettings() {
+private fun InboundSettings() {
     val context = LocalContext.current
     val options = Options.data
-    ApplyHint()
+    ReloadHint()
     SettingsGap()
     SurfaceCard {
-        AdaptiveNumberSetting("MTU TUN", "576–9000", options.mtu, 576, 9000) {
+        NumberSetting("MTU TUN", "576–9000", options.mtu, 576, 9000) {
             Options.update(context) { current -> current.copy(mtu = it) }
         }
-        AdaptiveSelectSetting("TUN-стек", "Реализация сетевого стека", options.tunStack, listOf("mixed", "gvisor", "system"), TUN_LABELS_ADAPTIVE) {
-            Options.update(context) { current -> current.copy(tunStack = it) }
-        }
+        FieldDivider()
+        SelectSetting(
+            "TUN-стек",
+            "Реализация сетевого стека",
+            options.tunStack,
+            listOf("mixed", "gvisor", "system"),
+            TUN_LABELS,
+        ) { Options.update(context) { current -> current.copy(tunStack = it) } }
+        FieldDivider()
         ToggleRow("Строгая маршрутизация", options.strictRoute, "Перехватывать весь подходящий трафик") {
             Options.update(context) { current -> current.copy(strictRoute = it) }
         }
@@ -413,49 +435,62 @@ private fun AdaptiveInboundSettings() {
 }
 
 @Composable
-private fun AdaptiveTlsSettings() {
+private fun TlsSettings() {
     val context = LocalContext.current
     val options = Options.data
-    ApplyHint()
+    ReloadHint()
     SettingsGap()
     SurfaceCard {
         ToggleRow("TLS-фрагментация", options.tlsFragment, "Фрагментация ClientHello") {
             Options.update(context) { current -> current.copy(tlsFragment = it) }
         }
-        AdaptiveSelectSetting("Режим фрагментации", "TLS record или TCP segment", options.fragmentMode, listOf("record", "tcp")) {
-            Options.update(context) { current -> current.copy(fragmentMode = it) }
-        }
+        FieldDivider()
+        SelectSetting(
+            "Режим фрагментации",
+            "TLS record или TCP segment",
+            options.fragmentMode,
+            listOf("record", "tcp"),
+        ) { Options.update(context) { current -> current.copy(fragmentMode = it) } }
+        FieldDivider()
         ToggleRow("Смешанный регистр SNI", options.mixedSniCase, "Изменять регистр имени сервера") {
             Options.update(context) { current -> current.copy(mixedSniCase = it) }
         }
         ToggleRow("TLS padding", options.tlsPadding, "Добавлять случайный padding") {
             Options.update(context) { current -> current.copy(tlsPadding = it) }
         }
-        AdaptiveNumberSetting("Padding от", "Минимум байт", options.paddingFrom, 0, 4096) {
+        FieldDivider()
+        NumberSetting("Padding от", "Минимум байт", options.paddingFrom, 0, 4096) {
             Options.update(context) { current -> current.copy(paddingFrom = it) }
         }
-        AdaptiveNumberSetting("Padding до", "Максимум байт", options.paddingTo, 0, 4096) {
+        FieldDivider()
+        NumberSetting("Padding до", "Максимум байт", options.paddingTo, 0, 4096) {
             Options.update(context) { current -> current.copy(paddingTo = it) }
         }
     }
 }
 
 @Composable
-private fun AdaptiveMuxSettings() {
+private fun MuxSettings() {
     val context = LocalContext.current
     val options = Options.data
-    ApplyHint()
+    ReloadHint()
     SettingsGap()
     SurfaceCard {
         ToggleRow("Включить multiplex", options.muxEnable, "Несколько потоков через одно соединение") {
             Options.update(context) { current -> current.copy(muxEnable = it) }
         }
-        AdaptiveSelectSetting("Протокол", "Multiplex transport", options.muxProtocol, listOf("h2mux", "smux", "yamux")) {
-            Options.update(context) { current -> current.copy(muxProtocol = it) }
-        }
-        AdaptiveNumberSetting("Максимум потоков", "1–64", options.muxMaxStreams, 1, 64) {
+        FieldDivider()
+        SelectSetting(
+            "Протокол",
+            "Multiplex transport",
+            options.muxProtocol,
+            listOf("h2mux", "smux", "yamux"),
+        ) { Options.update(context) { current -> current.copy(muxProtocol = it) } }
+        FieldDivider()
+        NumberSetting("Максимум потоков", "1–64", options.muxMaxStreams, 1, 64) {
             Options.update(context) { current -> current.copy(muxMaxStreams = it) }
         }
+        FieldDivider()
         ToggleRow("Padding multiplex", options.muxPadding, "Добавлять padding к фреймам") {
             Options.update(context) { current -> current.copy(muxPadding = it) }
         }
@@ -463,7 +498,7 @@ private fun AdaptiveMuxSettings() {
 }
 
 @Composable
-private fun AdaptiveLogsSettings() {
+private fun LogsSettings() {
     val context = LocalContext.current
     var refreshKey by remember { mutableStateOf(0) }
     val crash = remember(refreshKey) { Diag.lastCrash(context) }
@@ -471,17 +506,25 @@ private fun AdaptiveLogsSettings() {
     val run = remember(refreshKey) { Diag.boxRun(context) }
     val logcat = remember(refreshKey) { Diag.logcat(context) }
 
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        PillButton("Обновить") { refreshKey++ }
-        PillButton("Скопировать") {
-            copyText(context, Diag.fullReport(context))
-            toastAdaptive(context, "Диагностика скопирована")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) { PillButton("Обновить") { refreshKey++ } }
+            Box(Modifier.weight(1f)) {
+                PillButton("Скопировать") {
+                    copyText(context, Diag.fullReport(context))
+                    toast(context, "Диагностика скопирована")
+                }
+            }
         }
-        PillButton("Поделиться") { shareDiagnostics(context) }
-        PillButton("Очистить") {
-            Diag.clear(context)
-            refreshKey++
-            toastAdaptive(context, "Логи очищены")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) { PillButton("Поделиться") { shareDiagnostics(context) } }
+            Box(Modifier.weight(1f)) {
+                PillButton("Очистить") {
+                    Diag.clear(context)
+                    refreshKey++
+                    toast(context, "Логи очищены")
+                }
+            }
         }
     }
     SettingsGap()
@@ -509,7 +552,7 @@ private fun DiagnosticCard(title: String, value: String?) {
 }
 
 @Composable
-private fun AdaptiveAboutSettings() {
+private fun AboutSettings() {
     val context = LocalContext.current
     var checking by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
@@ -517,7 +560,7 @@ private fun AdaptiveAboutSettings() {
     SurfaceCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(58.dp).background(NinetyState.pack.accentSoft, RoundedCornerShape(16.dp)),
+                Modifier.size(60.dp).background(NinetyState.pack.accentSoft, RoundedCornerShape(17.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("九", style = NinetyTypography.headlineMedium, color = NinetyState.pack.accentBright)
@@ -530,13 +573,13 @@ private fun AdaptiveAboutSettings() {
         }
         SettingsGap()
         Text(
-            "Нативный Android VPN-клиент 190x4 на VpnService и libbox. Общие parser/config contracts синхронизированы с desktop-Ninety.",
+            "Нативный Android-клиент 190x4 на VpnService и libbox. Runtime подключения и UI сейчас проходят повторную проверку на реальном устройстве.",
             style = NinetyTypography.bodyMedium,
             color = Ink.TextMid,
         )
     }
     SettingsGap()
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PillButton(if (checking) "Проверяю…" else "Проверить обновление", enabled = !checking) {
             Updater.check(
                 onLoading = { checking = true },
@@ -547,7 +590,7 @@ private fun AdaptiveAboutSettings() {
                 },
             )
         }
-        PillButton("GitHub") { openUriAdaptive(context, "https://github.com/pathetixx/190x4-Ninety-Android") }
+        PillButton("GitHub") { openUri(context, "https://github.com/pathetixx/190x4-Ninety-Android") }
     }
     result?.let {
         SettingsGap()
@@ -556,44 +599,47 @@ private fun AdaptiveAboutSettings() {
 }
 
 @Composable
-private fun ApplyHint() {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(11.dp))
+private fun SettingsCallout(kicker: String, text: String) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
             .background(NinetyState.pack.accentSoft)
-            .border(1.dp, NinetyState.pack.accentSoft, RoundedCornerShape(11.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .border(1.dp, NinetyState.pack.accentSoft, RoundedCornerShape(13.dp))
+            .padding(13.dp),
     ) {
-        Box(Modifier.size(7.dp).background(NinetyState.pack.accent, CircleShape))
-        Spacer(Modifier.width(9.dp))
-        Text("Изменения ядра применятся при следующем подключении или reload.", style = MonoStyle, color = Ink.TextMid)
+        Text(kicker, style = KickerStyle, color = NinetyState.pack.accentBright)
+        Spacer(Modifier.height(6.dp))
+        Text(text, style = MonoStyle, color = Ink.TextMid)
     }
 }
 
 @Composable
-private fun AdaptiveTextSetting(label: String, hint: String, value: String, onValue: (String) -> Unit) {
+private fun ReloadHint() = SettingsCallout(
+    "ENGINE · RELOAD",
+    "Изменения ядра применятся при следующем подключении или явном reload.",
+)
+
+@Composable
+private fun TextSetting(label: String, hint: String, value: String, onValue: (String) -> Unit) {
     var draft by remember(value) { mutableStateOf(value) }
-    AdaptiveSettingRow(label, hint) {
-        BasicTextField(
-            value = draft,
-            onValueChange = { draft = it; onValue(it) },
-            singleLine = true,
-            textStyle = MonoStyle.copy(color = Ink.TextHi),
-            cursorBrush = SolidColor(NinetyState.pack.accent),
-            modifier = Modifier
-                .widthIn(min = 150.dp, max = 290.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Ink.Ink3)
-                .border(1.dp, Ink.Line2, RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-        )
-    }
+    SettingFieldHeader(label, hint)
+    Spacer(Modifier.height(8.dp))
+    BasicTextField(
+        value = draft,
+        onValueChange = {
+            draft = it
+            onValue(it)
+        },
+        singleLine = true,
+        textStyle = MonoStyle.copy(color = Ink.TextHi),
+        cursorBrush = SolidColor(NinetyState.pack.accent),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+            .background(Ink.Ink3).border(1.dp, Ink.Line2, RoundedCornerShape(9.dp))
+            .padding(horizontal = 11.dp, vertical = 10.dp),
+    )
 }
 
 @Composable
-private fun AdaptiveNumberSetting(
+private fun NumberSetting(
     label: String,
     hint: String,
     value: Int,
@@ -602,30 +648,26 @@ private fun AdaptiveNumberSetting(
     onValue: (Int) -> Unit,
 ) {
     var draft by remember(value) { mutableStateOf(value.toString()) }
-    AdaptiveSettingRow(label, hint) {
-        BasicTextField(
-            value = draft,
-            onValueChange = { raw ->
-                val filtered = raw.filter(Char::isDigit)
-                draft = filtered
-                filtered.toIntOrNull()?.coerceIn(min, max)?.let(onValue)
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            textStyle = MonoStyle.copy(color = Ink.TextHi),
-            cursorBrush = SolidColor(NinetyState.pack.accent),
-            modifier = Modifier
-                .width(100.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Ink.Ink3)
-                .border(1.dp, Ink.Line2, RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-        )
-    }
+    SettingFieldHeader(label, hint)
+    Spacer(Modifier.height(8.dp))
+    BasicTextField(
+        value = draft,
+        onValueChange = { raw ->
+            draft = raw.filter(Char::isDigit)
+            draft.toIntOrNull()?.coerceIn(min, max)?.let(onValue)
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        textStyle = MonoStyle.copy(color = Ink.TextHi),
+        cursorBrush = SolidColor(NinetyState.pack.accent),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+            .background(Ink.Ink3).border(1.dp, Ink.Line2, RoundedCornerShape(9.dp))
+            .padding(horizontal = 11.dp, vertical = 10.dp),
+    )
 }
 
 @Composable
-private fun AdaptiveSelectSetting(
+private fun SelectSetting(
     label: String,
     hint: String,
     value: String,
@@ -634,55 +676,50 @@ private fun AdaptiveSelectSetting(
     onValue: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    AdaptiveSettingRow(label, hint) {
-        Box {
-            Text(
-                labels[value] ?: value.uppercase(),
-                style = MonoStyle,
-                color = NinetyState.pack.accentBright,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Ink.Ink3)
-                    .border(1.dp, Ink.Line2, RoundedCornerShape(8.dp))
-                    .clickable { expanded = true }
-                    .padding(horizontal = 11.dp, vertical = 8.dp),
-            )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                values.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(labels[option] ?: option, style = MonoStyle) },
-                        onClick = { expanded = false; onValue(option) },
-                    )
-                }
+    SettingFieldHeader(label, hint)
+    Spacer(Modifier.height(8.dp))
+    Box {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                .background(Ink.Ink3).border(1.dp, Ink.Line2, RoundedCornerShape(9.dp))
+                .clickable { expanded = true }.padding(horizontal = 11.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(labels[value] ?: value.uppercase(), style = MonoStyle, color = NinetyState.pack.accentBright, modifier = Modifier.weight(1f))
+            Icon(NinetyIcons.ChevronRight, null, tint = Ink.TextFaint, modifier = Modifier.size(15.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            values.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(labels[option] ?: option, style = MonoStyle) },
+                    onClick = {
+                        expanded = false
+                        onValue(option)
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AdaptiveSettingRow(
-    label: String,
-    hint: String,
-    control: @Composable () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(label, style = NinetyTypography.titleMedium, color = Ink.TextHi)
-            Spacer(Modifier.height(2.dp))
-            Text(hint, style = MonoStyle, color = Ink.TextLo)
-        }
-        Spacer(Modifier.width(16.dp))
-        control()
-    }
+private fun SettingFieldHeader(label: String, hint: String) {
+    Text(label, style = NinetyTypography.titleMedium, color = Ink.TextHi)
+    Spacer(Modifier.height(3.dp))
+    Text(hint, style = MonoStyle, color = Ink.TextLo)
+}
+
+@Composable
+private fun FieldDivider() {
+    Spacer(Modifier.height(14.dp))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line1))
+    Spacer(Modifier.height(14.dp))
 }
 
 @Composable
 private fun SettingsGap() = Spacer(Modifier.height(14.dp))
 
-private val REGION_LABELS_ADAPTIVE = mapOf(
+private val REGION_LABELS = mapOf(
     "other" to "Другой",
     "ru" to "Россия",
     "cn" to "Китай",
@@ -690,13 +727,15 @@ private val REGION_LABELS_ADAPTIVE = mapOf(
     "tr" to "Турция",
     "by" to "Беларусь",
 )
-private val IPV6_LABELS_ADAPTIVE = mapOf(
+
+private val IPV6_LABELS = mapOf(
     "disable" to "Отключить",
     "enable" to "Включить",
     "prefer" to "Предпочитать",
     "only" to "Только IPv6",
 )
-private val TUN_LABELS_ADAPTIVE = mapOf(
+
+private val TUN_LABELS = mapOf(
     "mixed" to "Mixed",
     "gvisor" to "gVisor",
     "system" to "System",
@@ -721,13 +760,13 @@ private fun shareDiagnostics(context: Context) {
                 "Поделиться диагностикой",
             ),
         )
-    }.onFailure { toastAdaptive(context, it.message ?: "Не удалось поделиться") }
+    }.onFailure { toast(context, it.message ?: "Не удалось поделиться") }
 }
 
-private fun openUriAdaptive(context: Context, value: String) {
+private fun openUri(context: Context, value: String) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(value))) }
-        .onFailure { toastAdaptive(context, "Не удалось открыть ссылку") }
+        .onFailure { toast(context, "Не удалось открыть ссылку") }
 }
 
-private fun toastAdaptive(context: Context, message: String) =
+private fun toast(context: Context, message: String) =
     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
