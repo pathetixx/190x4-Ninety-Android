@@ -35,11 +35,9 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.net.NetworkInterface as JNetworkInterface
 import java.util.Collections
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.TimeUnit
 import pw.x4.ninety.MainActivity
 import pw.x4.ninety.R
 import pw.x4.ninety.core.model.RoutingRuleType
@@ -61,7 +59,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     @Volatile private var pfd: ParcelFileDescriptor? = null
     @Volatile private var monitorListener: InterfaceUpdateListener? = null
     @Volatile private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    @Volatile private var tunReady = CountDownLatch(0)
 
     private val cm by lazy { getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
 
@@ -169,7 +166,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             synchronized(resourceLock) {
                 inFlightServer = server
                 commandServer = server
-                tunReady = CountDownLatch(1)
             }
             server.start()
             if (!VpnController.isCurrent(ticket)) return
@@ -222,11 +218,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             val config = ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this))
             if (!VpnController.isCurrent(ticket)) return
 
-            val needsTun = synchronized(resourceLock) {
-                val missing = pfd == null
-                tunReady = if (missing) CountDownLatch(1) else CountDownLatch(0)
-                missing
-            }
+            val needsTun = pfd == null
             server.startOrReloadService(config, OverrideOptions())
             if (needsTun) awaitInitialTun(ticket)
             if (!VpnController.isCurrent(ticket)) return
@@ -243,12 +235,17 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun awaitInitialTun(ticket: VpnRuntimeTicket) {
-        val latch = tunReady
-        if (!latch.await(TUN_READY_TIMEOUT_SEC, TimeUnit.SECONDS)) {
-            throw IllegalStateException("TUN не был создан за $TUN_READY_TIMEOUT_SEC с")
+        val deadline = System.nanoTime() + TUN_READY_TIMEOUT_MS * 1_000_000L
+        while (VpnController.isCurrent(ticket) && pfd == null && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(TUN_POLL_INTERVAL_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            }
         }
         if (!VpnController.isCurrent(ticket)) return
-        check(pfd != null) { "TUN descriptor отсутствует после запуска ядра" }
+        check(pfd != null) { "TUN не был создан за ${TUN_READY_TIMEOUT_MS / 1000} с" }
     }
 
     private fun executeStop(ticket: VpnRuntimeTicket) {
@@ -269,8 +266,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     private fun closeEngineResources() {
         val resources = synchronized(resourceLock) {
-            tunReady.countDown()
-            tunReady = CountDownLatch(0)
             val captured = EngineResources(
                 servers = listOfNotNull(inFlightServer, commandServer).distinct(),
                 callback = networkCallback,
@@ -324,7 +319,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val previous = synchronized(resourceLock) {
             val old = pfd
             pfd = descriptor
-            tunReady.countDown()
             old
         }
         runCatching { previous?.close() }
@@ -524,7 +518,8 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         const val ACTION_RELOAD = "pw.x4.ninety.action.RELOAD"
         private const val CHANNEL = "ninety_vpn"
         private const val NOTIF_ID = 1
-        private const val TUN_READY_TIMEOUT_SEC = 12L
+        private const val TUN_READY_TIMEOUT_MS = 12_000L
+        private const val TUN_POLL_INTERVAL_MS = 50L
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(
