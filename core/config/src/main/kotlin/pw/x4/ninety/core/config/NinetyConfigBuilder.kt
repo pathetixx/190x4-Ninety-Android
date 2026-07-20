@@ -6,8 +6,10 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import pw.x4.ninety.core.model.DomainMatch
 import pw.x4.ninety.core.model.ProxySelection
@@ -30,11 +32,30 @@ object NinetyConfigBuilder {
         options: SingBoxOptions = SingBoxOptions(),
     ): String {
         val base = SingBoxConfigBuilder.build(nodes, selection, logPath, options)
-        val custom = options.customRules.mapNotNull { it.toSingBox(options.routingPlatform) }
-        if (custom.isEmpty()) return base
+        val warpEndpoint = WarpEndpointBuilder.build(options.warp)
+        val protectedOutbound = if (warpEndpoint == null) PROXY_TAG else WarpEndpointBuilder.TAG
+        val custom = options.customRules.mapNotNull { it.toSingBox(options.routingPlatform, protectedOutbound) }
+        if (custom.isEmpty() && warpEndpoint == null) return base
 
         val root = json.parseToJsonElement(base).jsonObject
-        val route = root.getValue("route").jsonObject
+        val route = decorateRoute(root.getValue("route").jsonObject, custom, warpEndpoint != null)
+        val updated = root.toMutableMap().apply {
+            put("route", route)
+            if (warpEndpoint != null) {
+                put("dns", decorateDns(root.getValue("dns").jsonObject))
+                put("endpoints", JsonArray(listOf(warpEndpoint)))
+            }
+        }
+        return JsonObject(updated).toString()
+    }
+
+    fun tagOfId(id: String): String = SingBoxConfigBuilder.tagOfId(id)
+
+    private fun decorateRoute(
+        route: JsonObject,
+        custom: List<JsonObject>,
+        warpEnabled: Boolean,
+    ): JsonObject {
         val existingRules = route.getValue("rules").jsonArray
         val insertionIndex = existingRules.serviceRulePrefixLength()
         val mergedRules = buildList<JsonElement> {
@@ -42,17 +63,40 @@ object NinetyConfigBuilder {
             addAll(custom)
             addAll(existingRules.drop(insertionIndex))
         }
-        val mergedRoute = JsonObject(route.toMutableMap().apply {
+        return JsonObject(route.toMutableMap().apply {
             put("rules", JsonArray(mergedRules))
+            if (warpEnabled) {
+                put("final", JsonPrimitive(WarpEndpointBuilder.TAG))
+                route["rule_set"]?.jsonArray?.let { sets ->
+                    put("rule_set", JsonArray(sets.map { element ->
+                        val set = element.jsonObject
+                        JsonObject(set.toMutableMap().apply {
+                            if (set.containsKey("download_detour")) {
+                                put("download_detour", JsonPrimitive(WarpEndpointBuilder.TAG))
+                            }
+                        })
+                    }))
+                }
+            }
         })
-        return JsonObject(root.toMutableMap().apply {
-            put("route", mergedRoute)
-        }).toString()
     }
 
-    fun tagOfId(id: String): String = SingBoxConfigBuilder.tagOfId(id)
+    private fun decorateDns(dns: JsonObject): JsonObject = JsonObject(dns.toMutableMap().apply {
+        dns["servers"]?.jsonArray?.let { servers ->
+            put("servers", JsonArray(servers.map { element ->
+                val server = element.jsonObject
+                if (server["tag"]?.jsonPrimitive?.contentOrNull != "dns-remote") {
+                    server
+                } else {
+                    JsonObject(server.toMutableMap().apply {
+                        put("detour", JsonPrimitive(WarpEndpointBuilder.TAG))
+                    })
+                }
+            }))
+        }
+    })
 
-    private fun RoutingRule.toSingBox(platform: RoutingPlatform): JsonObject? {
+    private fun RoutingRule.toSingBox(platform: RoutingPlatform, protectedOutbound: String): JsonObject? {
         if (!enabled) return null
         val clean = RoutingRuleSanitizer.sanitize(this).rule
         if (clean.values.isEmpty()) return null
@@ -71,7 +115,7 @@ object NinetyConfigBuilder {
         return buildJsonObject {
             put(subject, JsonArray(clean.values.map(::JsonPrimitive)))
             when (clean.action) {
-                RoutingRuleAction.PROXY -> put("outbound", "proxy")
+                RoutingRuleAction.PROXY -> put("outbound", protectedOutbound)
                 RoutingRuleAction.DIRECT -> put("outbound", "direct")
                 RoutingRuleAction.BLOCK -> put("action", "reject")
             }
@@ -85,4 +129,6 @@ object NinetyConfigBuilder {
         if (getOrNull(index)?.jsonObject?.get("action") == JsonPrimitive("hijack-dns")) index++
         return index
     }
+
+    private const val PROXY_TAG = "proxy"
 }
