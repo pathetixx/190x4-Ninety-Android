@@ -41,6 +41,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".WarpActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:theme="@style/Theme.Ninety" />
+
         <!-- Плитка быстрых настроек (шторка): вкл/выкл VPN одним тапом -->
         <service
             android:name=".vpn.NinetyTileService"
