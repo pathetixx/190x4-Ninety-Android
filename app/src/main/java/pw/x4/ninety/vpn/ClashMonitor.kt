@@ -30,12 +30,6 @@ enum class ProbePhase {
     Error,
 }
 
-/**
- * Generation-safe bridge to libbox CommandClient.
- *
- * Ping is an explicit probe cycle with retry and timeout. Old client callbacks are ignored after
- * reload/stop, so they cannot clear a newer test or publish stale node delays.
- */
 object ClashMonitor {
     data class Snapshot(
         val delays: Map<String, Int> = emptyMap(),
@@ -67,11 +61,13 @@ object ClashMonitor {
         Thread(runnable, "ninety-probe")
     }
     private val generation = AtomicLong()
+    private val clientEpoch = AtomicLong()
     private val cycle = AtomicLong()
 
     @Volatile private var running = false
     @Volatile private var client: CommandClient? = null
     @Volatile private var currentGeneration = 0L
+    @Volatile private var currentClientEpoch = 0L
     @Volatile private var activeCycle = 0L
     @Volatile private var resultCycle = 0L
     @Volatile private var reconnectAttempt = 0
@@ -91,6 +87,7 @@ object ClashMonitor {
         if (!running && snapshot.phase == ProbePhase.Offline) return
         running = false
         currentGeneration = generation.incrementAndGet()
+        currentClientEpoch = clientEpoch.incrementAndGet()
         timeoutFuture?.cancel(false)
         timeoutFuture = null
         val old = client
@@ -110,6 +107,8 @@ object ClashMonitor {
 
     private fun connect(session: Long) {
         if (!isCurrent(session)) return
+        val epoch = clientEpoch.incrementAndGet()
+        currentClientEpoch = epoch
         publish { it.copy(phase = ProbePhase.Connecting, lastError = null) }
         val old = client
         client = null
@@ -121,11 +120,15 @@ object ClashMonitor {
                 if (canProbe()) addCommand(Libbox.CommandGroup)
                 statusInterval = STATUS_INTERVAL_NS
             }
-            val next = CommandClient(SessionHandler(session), options)
+            val next = CommandClient(SessionHandler(session, epoch), options)
+            if (!isCurrent(session, epoch)) {
+                runCatching { next.disconnect() }
+                return
+            }
             client = next
             next.connect()
         } catch (error: Throwable) {
-            scheduleReconnect(session, error.message ?: "CommandClient connection failed")
+            scheduleReconnect(session, epoch, error.message ?: "CommandClient connection failed")
         }
     }
 
@@ -142,7 +145,7 @@ object ClashMonitor {
         }
         val current = client
         if (current == null) {
-            scheduleReconnect(session, "Монитор ядра ещё не подключён")
+            scheduleReconnect(session, currentClientEpoch, "Монитор ядра ещё не подключён")
             return
         }
 
@@ -193,8 +196,8 @@ object ClashMonitor {
         }, PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     }
 
-    private fun handleConnected(session: Long) {
-        if (!isCurrent(session)) return
+    private fun handleConnected(session: Long, epoch: Long) {
+        if (!isCurrent(session, epoch)) return
         reconnectAttempt = 0
         publish {
             it.copy(
@@ -204,18 +207,20 @@ object ClashMonitor {
             )
         }
         if (canProbe()) {
-            executor.schedule({ requestProbe(session, manual = false) }, INITIAL_PROBE_DELAY_MS, TimeUnit.MILLISECONDS)
+            executor.schedule({
+                if (isCurrent(session, epoch)) requestProbe(session, manual = false)
+            }, INITIAL_PROBE_DELAY_MS, TimeUnit.MILLISECONDS)
         }
     }
 
-    private fun handleDisconnected(session: Long, message: String?) {
-        if (!isCurrent(session)) return
+    private fun handleDisconnected(session: Long, epoch: Long, message: String?) {
+        if (!isCurrent(session, epoch)) return
         client = null
-        scheduleReconnect(session, message?.takeIf(String::isNotBlank) ?: "Монитор ядра отключён")
+        scheduleReconnect(session, epoch, message?.takeIf(String::isNotBlank) ?: "Монитор ядра отключён")
     }
 
-    private fun scheduleReconnect(session: Long, message: String) {
-        if (!isCurrent(session)) return
+    private fun scheduleReconnect(session: Long, epoch: Long, message: String) {
+        if (!isCurrent(session, epoch)) return
         val delay = (RECONNECT_BASE_MS shl reconnectAttempt.coerceAtMost(4)).coerceAtMost(RECONNECT_MAX_MS)
         reconnectAttempt++
         publish {
@@ -228,15 +233,15 @@ object ClashMonitor {
         scheduleConnect(session, delay)
     }
 
-    private fun handleStatus(session: Long, message: StatusMessage) {
-        if (!isCurrent(session)) return
+    private fun handleStatus(session: Long, epoch: Long, message: StatusMessage) {
+        if (!isCurrent(session, epoch)) return
         val up = runCatching { message.uplink }.getOrDefault(0L)
         val down = runCatching { message.downlink }.getOrDefault(0L)
         publish { it.copy(up = up, down = down, connected = true) }
     }
 
-    private fun handleGroups(session: Long, message: OutboundGroupIterator?) {
-        if (!isCurrent(session) || message == null) return
+    private fun handleGroups(session: Long, epoch: Long, message: OutboundGroupIterator?) {
+        if (!isCurrent(session, epoch) || message == null) return
         val delays = linkedMapOf<String, Int>()
         var selectorNow: String? = null
         var autoNow: String? = null
@@ -296,21 +301,27 @@ object ClashMonitor {
 
     private fun isCurrent(session: Long): Boolean = running && session == currentGeneration
 
+    private fun isCurrent(session: Long, epoch: Long): Boolean =
+        isCurrent(session) && epoch == currentClientEpoch
+
     private fun publish(transform: (Snapshot) -> Snapshot) {
         main.post { snapshot = transform(snapshot) }
     }
 
-    private class SessionHandler(private val session: Long) : CommandClientHandler {
-        override fun connected() = handleConnected(session)
-        override fun disconnected(message: String?) = handleDisconnected(session, message)
+    private class SessionHandler(
+        private val session: Long,
+        private val epoch: Long,
+    ) : CommandClientHandler {
+        override fun connected() = handleConnected(session, epoch)
+        override fun disconnected(message: String?) = handleDisconnected(session, epoch, message)
         override fun setDefaultLogLevel(level: Int) = Unit
         override fun clearLogs() = Unit
         override fun writeLogs(messageList: LogIterator?) = Unit
-        override fun writeStatus(message: StatusMessage) = handleStatus(session, message)
+        override fun writeStatus(message: StatusMessage) = handleStatus(session, epoch, message)
         override fun initializeClashMode(modeList: StringIterator, currentMode: String) = Unit
         override fun updateClashMode(newMode: String) = Unit
         override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
-        override fun writeGroups(message: OutboundGroupIterator?) = handleGroups(session, message)
+        override fun writeGroups(message: OutboundGroupIterator?) = handleGroups(session, epoch, message)
     }
 
     private fun validDelay(value: Int): Boolean = value in 1 until INVALID_DELAY
