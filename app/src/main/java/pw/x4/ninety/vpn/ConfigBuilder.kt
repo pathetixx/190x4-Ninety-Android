@@ -98,6 +98,7 @@ object ConfigBuilder {
             rule.type != RoutingRuleType.ANDROID_PACKAGE || Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         },
         routingPlatform = RoutingPlatform.ANDROID,
+        warp = WarpRuntime.configForBuild(this),
         dnsRemote = dnsRemote,
         dnsDirect = dnsDirect,
         fakeDns = fakeDns,
