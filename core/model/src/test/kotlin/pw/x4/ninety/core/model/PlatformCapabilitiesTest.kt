@@ -12,6 +12,7 @@ class PlatformCapabilitiesTest {
         assertTrue(android.tun)
         assertTrue(android.perAppRouting)
         assertTrue(android.alwaysOnVpn)
+        assertTrue(android.warp)
         assertFalse(android.systemProxy)
         assertFalse(android.nativeKillSwitch)
         assertFalse(android.dpiSidecar)
