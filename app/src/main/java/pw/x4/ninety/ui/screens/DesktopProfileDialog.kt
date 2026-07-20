@@ -94,8 +94,8 @@ internal fun DesktopAddProfileDialog(context: Context, onDismiss: () -> Unit) {
         if (uri != null) {
             runCatching {
                 context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: error("Не удалось прочитать файл")
-            }.onSuccess { import(it, name.takeIf(String::isNotBlank)) }
+                    ?: throw IllegalStateException("Не удалось прочитать файл")
+            }.onSuccess { import(it, name.takeIf { value -> value.isNotBlank() }) }
                 .onFailure {
                     error = it.message ?: "Не удалось прочитать файл"
                     page = AddProfilePage.Options
@@ -154,7 +154,7 @@ internal fun DesktopAddProfileDialog(context: Context, onDismiss: () -> Unit) {
                     onNameChange = { name = it },
                     onTextChange = { text = it },
                     onBack = { error = null; page = AddProfilePage.Options },
-                    onSubmit = { import(text, name.takeIf(String::isNotBlank)) },
+                    onSubmit = { import(text, name.takeIf { value -> value.isNotBlank() }) },
                 )
                 AddProfilePage.Loading -> DesktopProfileLoadingPage()
             }
