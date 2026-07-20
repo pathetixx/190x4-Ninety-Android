@@ -5,6 +5,12 @@ plugins {
 }
 
 val releaseKeystore = System.getenv("NINETY_KEYSTORE")
+val includeEmulatorAbi = providers.gradleProperty("ninety.testEmulator").orNull == "true"
+val packagedAbis = buildList {
+    add("arm64-v8a")
+    add("armeabi-v7a")
+    if (includeEmulatorAbi) add("x86_64")
+}
 
 android {
     namespace = "pw.x4.ninety"
@@ -23,7 +29,7 @@ android {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a")
+            include(*packagedAbis.toTypedArray())
             isUniversalApk = false
         }
     }
@@ -71,6 +77,16 @@ android {
     }
     testOptions {
         unitTests.all { it.useJUnitPlatform() }
+        managedDevices {
+            localDevices {
+                create("pixel2Api35") {
+                    device = "Pixel 2"
+                    apiLevel = 35
+                    systemImageSource = "aosp"
+                    require64Bit = true
+                }
+            }
+        }
     }
 }
 
@@ -103,4 +119,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation(kotlin("test-junit5"))
+
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }
