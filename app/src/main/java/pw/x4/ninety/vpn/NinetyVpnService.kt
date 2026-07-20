@@ -20,6 +20,8 @@ import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
+import io.nekohasekai.libbox.NetworkInterface as LbNetworkInterface
+import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification as LibboxNotification
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
@@ -29,8 +31,6 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
-import io.nekohasekai.libbox.NetworkInterface as LbNetworkInterface
-import io.nekohasekai.libbox.NetworkInterfaceIterator
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.NetworkInterface as JNetworkInterface
@@ -309,9 +309,23 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         drainRoutes(options.getInet6RouteAddress()) { builder.addRoute(it.address(), it.prefix()) }
 
         runCatching { builder.addDnsServer(options.getDNSServerAddress().getValue()) }
-        drainStrings(options.getIncludePackage()) { runCatching { builder.addAllowedApplication(it) } }
-        drainStrings(options.getExcludePackage()) { runCatching { builder.addDisallowedApplication(it) } }
-        runCatching { builder.addDisallowedApplication(packageName) }
+        val included = mutableListOf<String>()
+        val excluded = mutableListOf<String>()
+        drainStrings(options.getIncludePackage()) { included += it }
+        drainStrings(options.getExcludePackage()) { excluded += it }
+        val appPolicy = resolveVpnAppPolicy(included, excluded, packageName)
+        if (appPolicy.allowed.isNotEmpty()) {
+            var applied = 0
+            appPolicy.allowed.forEach { packageId ->
+                runCatching { builder.addAllowedApplication(packageId) }
+                    .onSuccess { applied++ }
+            }
+            require(applied > 0) { "Ни одно приложение из allowlist не установлено" }
+        } else {
+            appPolicy.disallowed.forEach { packageId ->
+                runCatching { builder.addDisallowedApplication(packageId) }
+            }
+        }
 
         builder.setSession("Ninety")
         val descriptor = builder.establish()
