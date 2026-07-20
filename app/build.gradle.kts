@@ -90,6 +90,7 @@ dependencies {
     implementation(project(":core:parser"))
     implementation(project(":core:config"))
     implementation(project(":core:runtime"))
+    implementation(project(":core:quality"))
     implementation(project(":data"))
 
     // Ядро VPN — libbox.aar (gomobile bind hiddify-sing-box), кладётся CI в app/libs/.
