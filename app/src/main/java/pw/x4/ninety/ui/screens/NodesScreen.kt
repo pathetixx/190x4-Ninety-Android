@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import pw.x4.ninety.core.quality.NodeQualityRating
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.PingPill
@@ -59,6 +60,7 @@ import pw.x4.ninety.vpn.ClashMonitor
 import pw.x4.ninety.vpn.ConfigBuilder
 import pw.x4.ninety.vpn.ConnState
 import pw.x4.ninety.vpn.NinetyVpnService
+import pw.x4.ninety.vpn.QualityRuntime
 import pw.x4.ninety.vpn.VpnController
 
 @Composable
@@ -66,9 +68,12 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
     val context = LocalContext.current
     val profile = Store.activeProfile()
     val rawNodes = Store.activeProfileNodes()
-    val snapshot = ClashMonitor.snapshot
+    val monitor = ClashMonitor.snapshot
+    val quality = QualityRuntime.snapshot
     val connected = VpnController.state == ConnState.Connected
-    val nodes = remember(rawNodes, snapshot.delays) { sortByPing(rawNodes, snapshot.delays) }
+    val nodes = remember(rawNodes, monitor.delays, quality.ratings) {
+        sortByQuality(rawNodes, quality.ratings, monitor.delays)
+    }
 
     NinetyPage(metrics) {
         Box(Modifier.fillMaxSize()) {
@@ -78,8 +83,9 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
                     title = "Ноды",
                     sub = when {
                         nodes.isEmpty() -> "Профиль не выбран или не содержит нод"
-                        connected -> "${nodes.size} ${plural(nodes.size)} · выбор применяется к активному туннелю"
-                        else -> "${nodes.size} ${plural(nodes.size)} · пинг появится после подключения"
+                        connected -> "${nodes.size} ${plural(nodes.size)} · Quality Engine стабилизирует Auto"
+                        quality.ratings.isNotEmpty() -> "${nodes.size} ${plural(nodes.size)} · сохранена история качества"
+                        else -> "${nodes.size} ${plural(nodes.size)} · оценки появятся после подключения"
                     },
                 )
                 Spacer(Modifier.height(18.dp))
@@ -96,11 +102,18 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
                     ) {
                         if (nodes.size >= 2) {
                             item(key = "__auto__", span = { GridItemSpan(maxLineSpan) }) {
-                                val effective = nodeByTag(nodes, snapshot.autoNow)
+                                val recommended = quality.recommendedNodeId
+                                    ?.let { id -> nodes.firstOrNull { it.id == id } }
+                                val rawEffective = nodeByTag(nodes, monitor.autoNow)
+                                val effective = recommended ?: rawEffective
+                                val rating = effective?.let { quality.ratings[it.id] }
                                 AutoCard(
                                     selected = Store.isAutoActive,
                                     effectiveName = effective?.let { it.name.ifBlank { it.host } },
-                                    ping = snapshot.autoNow?.let { snapshot.delays[it] },
+                                    ping = rating?.medianDelayMs
+                                        ?: monitor.autoNow?.let { monitor.delays[it] },
+                                    score = rating?.score,
+                                    managed = recommended != null,
                                     onClick = { select(context, Store.AUTO_ID) },
                                 )
                             }
@@ -109,7 +122,9 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
                             NodeCard(
                                 node = node,
                                 selected = node.id == Store.activeId,
-                                ping = snapshot.delays[ConfigBuilder.tagOf(node)],
+                                ping = monitor.delays[ConfigBuilder.tagOf(node)],
+                                rating = quality.ratings[node.id],
+                                recommended = node.id == quality.recommendedNodeId,
                                 onClick = { select(context, node.id) },
                             )
                         }
@@ -119,7 +134,7 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
 
             if (connected && nodes.isNotEmpty()) {
                 TestAllFab(
-                    testing = snapshot.testing,
+                    testing = monitor.testing,
                     modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 22.dp),
                 ) { ClashMonitor.urlTestAll() }
             }
@@ -161,6 +176,8 @@ private fun AutoCard(
     selected: Boolean,
     effectiveName: String?,
     ping: Int?,
+    score: Int?,
+    managed: Boolean,
     onClick: () -> Unit,
 ) {
     val pack = NinetyState.pack
@@ -198,24 +215,34 @@ private fun AutoCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Авто", color = Ink.TextHi, style = NinetyTypography.titleMedium)
                 Spacer(Modifier.width(8.dp))
-                Text("URLTEST", style = KickerStyle, color = pack.accent)
+                Text(if (managed) "QUALITY" else "URLTEST", style = KickerStyle, color = pack.accent)
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                effectiveName?.let { "Сейчас → $it" } ?: "Быстрейший узел по задержке",
+                effectiveName?.let { if (managed) "Стабильно → $it" else "Сейчас → $it" }
+                    ?: "Сбор истории задержки и доступности",
                 color = if (effectiveName != null) pack.accentBright else Ink.TextLo,
                 style = MonoStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
+        QualityPill(score)
+        Spacer(Modifier.width(8.dp))
         PingPill(ping)
     }
 }
 
 @Composable
-private fun NodeCard(node: Node, selected: Boolean, ping: Int?, onClick: () -> Unit) {
+private fun NodeCard(
+    node: Node,
+    selected: Boolean,
+    ping: Int?,
+    rating: NodeQualityRating?,
+    recommended: Boolean,
+    onClick: () -> Unit,
+) {
     val pack = NinetyState.pack
     val shape = RoundedCornerShape(16.dp)
     Column(
@@ -227,10 +254,10 @@ private fun NodeCard(node: Node, selected: Boolean, ping: Int?, onClick: () -> U
                 else SolidColor(Ink.Ink1),
                 shape,
             )
-            .border(1.dp, if (selected) pack.accentSoft else Ink.Line2, shape)
+            .border(1.dp, if (selected || recommended) pack.accentSoft else Ink.Line2, shape)
             .topHairline(
-                color = if (selected) pack.accent else Color.White,
-                alpha = if (selected) 0.5f else if (pack.palette.isLight) 0.42f else 0.08f,
+                color = if (selected || recommended) pack.accent else Color.White,
+                alpha = if (selected || recommended) 0.5f else if (pack.palette.isLight) 0.42f else 0.08f,
             )
             .clickable { onClick() }
             .padding(15.dp),
@@ -240,7 +267,7 @@ private fun NodeCard(node: Node, selected: Boolean, ping: Int?, onClick: () -> U
                 Modifier
                     .size(10.dp)
                     .clip(CircleShape)
-                    .background(if (selected) pack.accent else Ink.Line3),
+                    .background(if (selected || recommended) pack.accent else Ink.Line3),
             )
             Spacer(Modifier.width(11.dp))
             Text(
@@ -251,7 +278,9 @@ private fun NodeCard(node: Node, selected: Boolean, ping: Int?, onClick: () -> U
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
+            QualityPill(rating?.score)
+            Spacer(Modifier.width(8.dp))
             PingPill(ping)
         }
         Spacer(Modifier.height(11.dp))
@@ -263,12 +292,42 @@ private fun NodeCard(node: Node, selected: Boolean, ping: Int?, onClick: () -> U
         Spacer(Modifier.height(11.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line1))
         Spacer(Modifier.height(9.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                "${node.host}:${node.port}",
+                color = Ink.TextLo,
+                style = MonoStyle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            rating?.let {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "${it.successRate}% · j${it.jitterMs}",
+                    style = MonoStyle,
+                    color = if (it.available) Ink.TextMid else Ink.TextFaint,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QualityPill(score: Int?) {
+    val pack = NinetyState.pack
+    val value = score?.takeIf { it > 0 }
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (value != null) pack.accentSoft else Ink.Ink3)
+            .border(1.dp, if (value != null) pack.accentSoft else Ink.Line2, RoundedCornerShape(8.dp))
+            .padding(horizontal = 7.dp, vertical = 4.dp),
+    ) {
         Text(
-            "${node.host}:${node.port}",
-            color = Ink.TextLo,
-            style = MonoStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            value?.let { "Q$it" } ?: "Q—",
+            style = KickerStyle,
+            color = if (value != null) pack.accentBright else Ink.TextFaint,
         )
     }
 }
@@ -325,14 +384,18 @@ private fun pingGrade(ms: Int?): Int = when {
     else -> 2
 }
 
-private fun sortByPing(nodes: List<Node>, delays: Map<String, Int>): List<Node> =
-    nodes.withIndex().sortedWith(
-        compareBy(
-            { pingGrade(delays[ConfigBuilder.tagOf(it.value)]) },
-            { delays[ConfigBuilder.tagOf(it.value)]?.takeIf { delay -> delay > 0 } ?: 99999 },
-            { it.index },
-        ),
-    ).map { it.value }
+private fun sortByQuality(
+    nodes: List<Node>,
+    ratings: Map<String, NodeQualityRating>,
+    delays: Map<String, Int>,
+): List<Node> = nodes.withIndex().sortedWith(
+    compareBy(
+        { if (ratings[it.value.id]?.available == true) 0 else pingGrade(delays[ConfigBuilder.tagOf(it.value)]) + 1 },
+        { -(ratings[it.value.id]?.score ?: 0) },
+        { ratings[it.value.id]?.medianDelayMs ?: delays[ConfigBuilder.tagOf(it.value)] ?: 99999 },
+        { it.index },
+    ),
+).map { it.value }
 
 private fun plural(value: Int): String {
     val mod10 = value % 10
