@@ -153,7 +153,7 @@ fun UpdateModal(release: Updater.Release, onDismiss: () -> Unit) {
                     progress = 0
                     Updater.downloadAndInstall(
                         context = context,
-                        release = release,
+                        rel = release,
                         onProgress = { progress = it },
                         onDone = { err ->
                             if (err != null) {
