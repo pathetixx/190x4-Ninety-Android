@@ -9,6 +9,7 @@ import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.packById
+import pw.x4.ninety.vpn.QualityRuntime
 import pw.x4.ninety.vpn.VpnController
 
 class NinetyApplication : Application() {
@@ -45,6 +46,8 @@ class NinetyApplication : Application() {
         }
         // Настройки ядра (для tile-старта VPN без открытия аппы).
         Options.load(this)
+        // История Quality Engine загружается после Store/Options и очищается от удалённых нод.
+        QualityRuntime.initialize(this)
         // Контекст для пинка QS-плитки при смене состояния туннеля.
         VpnController.appContext = this
     }
