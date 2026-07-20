@@ -13,7 +13,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,8 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.item
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Store
@@ -46,7 +44,6 @@ import pw.x4.ninety.ui.layout.NinetyLayoutMetrics
 import pw.x4.ninety.ui.layout.NinetyPage
 import pw.x4.ninety.ui.theme.Ink
 import pw.x4.ninety.ui.theme.KickerStyle
-import pw.x4.ninety.ui.theme.MonoStyle
 import pw.x4.ninety.ui.theme.NinetyRadius
 import pw.x4.ninety.ui.theme.NinetyState
 import pw.x4.ninety.ui.theme.NinetyTypography
@@ -54,11 +51,11 @@ import pw.x4.ninety.vpn.ClashMonitor
 import pw.x4.ninety.vpn.ConfigBuilder
 import pw.x4.ninety.vpn.ConnState
 import pw.x4.ninety.vpn.NinetyVpnService
-import pw.x4.ninety.vpn.ProbePhase
 import pw.x4.ninety.vpn.TunnelMode
 import pw.x4.ninety.vpn.TunnelModes
 import pw.x4.ninety.vpn.VpnController
 
+/** Desktop `proxies-screen.css` port: auto-fill 268×72 cards and a 48dp test FAB. */
 @Composable
 fun DesktopNodesScreen(metrics: NinetyLayoutMetrics) {
     val context = LocalContext.current
@@ -71,45 +68,33 @@ fun DesktopNodesScreen(metrics: NinetyLayoutMetrics) {
     NinetyPage(metrics) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().padding(top = if (metrics.isCompact) 16.dp else 24.dp)) {
-                Column {
-                    Text("PROXY FLEET · ${nodes.size}", style = KickerStyle, color = Ink.TextFaint)
-                    Spacer(Modifier.height(5.dp))
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Ноды", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
-                            Spacer(Modifier.height(5.dp))
-                            Text(
-                                profile?.let { "$it · native Auto sing-box · ${probePhaseLabel(monitor.phase)}" }
-                                    ?: "Профиль не выбран",
-                                style = NinetyTypography.bodyMedium,
-                                color = Ink.TextMid,
-                            )
-                        }
-                        Text(
-                            TunnelModes.current().title.uppercase(),
-                            style = KickerStyle,
-                            color = NinetyState.pack.material.secondary,
-                        )
-                    }
-                }
+                Text("NODES · 190X4", style = KickerStyle, color = Ink.TextFaint)
+                Spacer(Modifier.height(5.dp))
+                Text("Ноды", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    profile?.let {
+                        "${it.name} · ${nodes.size} нод · ${probePhaseLabel(monitor.phase)}"
+                    } ?: "Подписка не выбрана",
+                    style = NinetyTypography.bodyMedium,
+                    color = Ink.TextMid,
+                )
                 Spacer(Modifier.height(14.dp))
-                DesktopProbeBanner(monitor.phase, monitor.lastError, monitor.measuredAtMs, nodes.size)
-                Spacer(Modifier.height(12.dp))
 
                 if (nodes.isEmpty()) {
                     DesktopEmptyNodes(Modifier.fillMaxSize())
                 } else {
                     LazyVerticalGrid(
-                        columns = if (metrics.isCompact || metrics.isExpanded) GridCells.Fixed(1) else GridCells.Adaptive(310.dp),
+                        columns = GridCells.Adaptive(268.dp),
                         modifier = Modifier.fillMaxSize(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(if (metrics.isExpanded) 7.dp else 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            bottom = if (connected && TunnelModes.current() != TunnelMode.WARP_DIRECT) 92.dp else 28.dp,
+                            bottom = if (connected && TunnelModes.current() != TunnelMode.WARP_DIRECT) 88.dp else 28.dp,
                         ),
                     ) {
                         if (nodes.size >= 2) {
-                            item(key = "__auto__", span = { GridItemSpan(maxLineSpan) }) {
+                            item(key = "__auto__") {
                                 val effective = desktopNodeByTag(nodes, monitor.autoNow)
                                 DesktopFleetRow(
                                     auto = true,
@@ -119,7 +104,6 @@ fun DesktopNodesScreen(metrics: NinetyLayoutMetrics) {
                                     effectiveName = effective?.let { it.name.ifBlank { it.host } },
                                     ping = monitor.autoNow?.let(monitor.delays::get),
                                     phase = monitor.phase,
-                                    compact = !metrics.isExpanded,
                                     onClick = { selectDesktopNode(context, Store.AUTO_ID) },
                                 )
                             }
@@ -133,7 +117,6 @@ fun DesktopNodesScreen(metrics: NinetyLayoutMetrics) {
                                 effectiveName = null,
                                 ping = monitor.delays[ConfigBuilder.tagOf(node)],
                                 phase = monitor.phase,
-                                compact = !metrics.isExpanded,
                                 onClick = { selectDesktopNode(context, node.id) },
                             )
                         }
@@ -144,47 +127,10 @@ fun DesktopNodesScreen(metrics: NinetyLayoutMetrics) {
             if (connected && nodes.isNotEmpty() && TunnelModes.current() != TunnelMode.WARP_DIRECT) {
                 DesktopTestAllFab(
                     testing = monitor.testing,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 22.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 2.dp, bottom = 24.dp),
                 ) { ClashMonitor.urlTestAll() }
             }
         }
-    }
-}
-
-@Composable
-private fun DesktopProbeBanner(phase: ProbePhase, error: String?, measuredAtMs: Long, nodeCount: Int) {
-    val pack = NinetyState.pack
-    val (label, color) = when (phase) {
-        ProbePhase.Offline -> "PING · OFFLINE" to Ink.TextFaint
-        ProbePhase.Connecting -> "PING · CONNECTING" to Ink.Warn
-        ProbePhase.Testing -> "PING · TESTING" to pack.accentBright
-        ProbePhase.Partial -> "PING · PARTIAL" to Ink.Warn
-        ProbePhase.Ready -> "PING · READY" to Ink.Ok
-        ProbePhase.Error -> "PING · ERROR" to Ink.Err
-    }
-    val measured = ClashMonitor.snapshot.delays.values.count(::desktopValidPing)
-    Row(
-        Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(NinetyRadius.sm))
-            .desktopCard().padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(7.dp).background(color, CircleShape))
-        Spacer(Modifier.size(9.dp))
-        Text(label, style = KickerStyle, color = color)
-        Spacer(Modifier.size(14.dp))
-        Text(
-            error ?: when {
-                measuredAtMs > 0 -> "$measured / $nodeCount результатов"
-                phase == ProbePhase.Offline -> "Запустите VPN для проверки"
-                else -> "Ожидание CommandClient"
-            },
-            style = MonoStyle,
-            color = Ink.TextLo,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Text("10s timeout", style = KickerStyle, color = Ink.TextFaint)
     }
 }
 
@@ -210,14 +156,27 @@ private fun DesktopEmptyNodes(modifier: Modifier = Modifier) {
 private fun DesktopTestAllFab(testing: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val pack = NinetyState.pack
     val spin = rememberInfiniteTransition(label = "desktopNodesFab")
-    val angle by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
+    val angle by spin.animateFloat(
+        0f,
+        360f,
+        infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
+        label = "angle",
+    )
     Box(
-        modifier.size(54.dp).clip(CircleShape).background(pack.accent)
-            .border(1.dp, pack.material.secondary, CircleShape)
+        modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .desktopCard(active = true, shape = CircleShape)
+            .border(1.dp, pack.accent, CircleShape)
             .clickable(enabled = !testing) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(NinetyIcons.Refresh, "Проверить все", tint = Ink.Ink0, modifier = Modifier.size(23.dp).rotate(if (testing) angle else 0f))
+        Icon(
+            NinetyIcons.Refresh,
+            "Проверить все",
+            tint = pack.accentBright,
+            modifier = Modifier.size(20.dp).rotate(if (testing) angle else 0f),
+        )
     }
 }
 
@@ -226,15 +185,17 @@ private fun selectDesktopNode(context: Context, id: String) {
     if (VpnController.isActive && TunnelModes.current().requiresProxySelection) NinetyVpnService.reload(context)
 }
 
-private fun desktopNodeByTag(nodes: List<Node>, tag: String?): Node? = tag?.let { value -> nodes.firstOrNull { ConfigBuilder.tagOf(it) == value } }
+private fun desktopNodeByTag(nodes: List<Node>, tag: String?): Node? =
+    tag?.let { value -> nodes.firstOrNull { ConfigBuilder.tagOf(it) == value } }
 
-private fun sortDesktopNodes(nodes: List<Node>, delays: Map<String, Int>): List<Node> = nodes.withIndex().sortedWith(
-    compareBy(
-        { desktopPingGrade(delays[ConfigBuilder.tagOf(it.value)]) },
-        { delays[ConfigBuilder.tagOf(it.value)]?.takeIf(::desktopValidPing) ?: Int.MAX_VALUE },
-        { it.index },
-    ),
-).map { it.value }
+private fun sortDesktopNodes(nodes: List<Node>, delays: Map<String, Int>): List<Node> =
+    nodes.withIndex().sortedWith(
+        compareBy(
+            { desktopPingGrade(delays[ConfigBuilder.tagOf(it.value)]) },
+            { delays[ConfigBuilder.tagOf(it.value)]?.takeIf(::desktopValidPing) ?: Int.MAX_VALUE },
+            { it.index },
+        ),
+    ).map { it.value }
 
 private fun desktopPingGrade(ms: Int?): Int = when {
     !desktopValidPing(ms) -> 3
