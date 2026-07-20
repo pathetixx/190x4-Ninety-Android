@@ -35,9 +35,11 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.net.NetworkInterface as JNetworkInterface
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import pw.x4.ninety.MainActivity
 import pw.x4.ninety.R
 import pw.x4.ninety.core.model.RoutingRuleType
@@ -47,40 +49,22 @@ import pw.x4.ninety.data.Diag
 import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Store
 
-/**
- * VpnService + libbox runtime.
- *
- * Start, reload and stop are executed by one FIFO executor. Each command also owns a generation
- * ticket created before it enters the queue. A later command invalidates long-running older work,
- * so an old start/reload can never publish Connected or stop a newer tunnel.
- */
 class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private val resourceLock = Any()
     private val runtimeExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "ninety-vpn-runtime")
     }
 
-    @Volatile
-    private var destroyed = false
-
-    @Volatile
-    private var commandServer: CommandServer? = null
-
-    @Volatile
-    private var inFlightServer: CommandServer? = null
-
-    @Volatile
-    private var pfd: ParcelFileDescriptor? = null
-
-    @Volatile
-    private var monitorListener: InterfaceUpdateListener? = null
-
-    @Volatile
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var destroyed = false
+    @Volatile private var commandServer: CommandServer? = null
+    @Volatile private var inFlightServer: CommandServer? = null
+    @Volatile private var pfd: ParcelFileDescriptor? = null
+    @Volatile private var monitorListener: InterfaceUpdateListener? = null
+    @Volatile private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var tunReady = CountDownLatch(0)
 
     private val cm by lazy { getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
 
-    // ── lifecycle ──────────────────────────────────────────────
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
@@ -88,7 +72,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 enqueue(VpnController.requestStop(null))
                 return START_NOT_STICKY
             }
-
             ACTION_RELOAD -> {
                 VpnController.requestReload()?.let {
                     updateNotificationSafely("Применение настроек…")
@@ -96,7 +79,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
                 return START_STICKY
             }
-
             else -> {
                 val ticket = VpnController.requestStart() ?: return START_STICKY
                 if (!enterForeground(ticket)) return START_NOT_STICKY
@@ -146,7 +128,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
             }
         } catch (_: RejectedExecutionException) {
-            // Service destruction already invalidated the ticket and synchronously closed resources.
+            // Service teardown already invalidated the ticket.
         }
     }
 
@@ -156,15 +138,19 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         try {
             runCatching { Libbox.redirectStderr(Diag.stderrFile(this).absolutePath) }
             Diag.startRunLog(this)
-
-            val supported = Store.supportedActiveNodes()
-            require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
             Options.load(this)
+
+            val mode = TunnelModes.current()
+            val check = TunnelModes.checkStart(mode)
+            require(check.allowed) { check.message ?: "Режим подключения не готов" }
+            val supported = Store.supportedActiveNodes()
+            if (mode.requiresProxySelection) require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
+
             val config = ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this))
             if (!VpnController.isCurrent(ticket)) return
 
             val work = File(filesDir, "work").apply { mkdirs() }
-            val options = SetupOptions().apply {
+            val setup = SetupOptions().apply {
                 setBasePath(filesDir.absolutePath)
                 setWorkingPath(work.absolutePath)
                 setTempPath(cacheDir.absolutePath)
@@ -174,7 +160,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 setFixAndroidStack(false)
                 setDebug(false)
             }
-            Libbox.setup(options)
+            Libbox.setup(setup)
             Libbox.checkConfig(config)
             if (!VpnController.isCurrent(ticket)) return
 
@@ -183,19 +169,20 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             synchronized(resourceLock) {
                 inFlightServer = server
                 commandServer = server
+                tunReady = CountDownLatch(1)
             }
             server.start()
             if (!VpnController.isCurrent(ticket)) return
 
-            // options must be non-null: libbox dereferences it in command_server.go.
             server.startOrReloadService(config, OverrideOptions())
+            awaitInitialTun(ticket)
             if (!VpnController.isCurrent(ticket)) return
 
             synchronized(resourceLock) { inFlightServer = null }
-            val name = Store.activeNodeLabel() ?: supported.firstOrNull()?.name
+            val name = TunnelModes.activeLabel(mode)
             if (VpnController.completeConnected(ticket, name)) {
                 updateNotificationSafely("Защищено${name?.let { " · $it" } ?: ""}")
-                localServer = null // ownership moved to commandServer
+                localServer = null
             }
         } catch (error: Throwable) {
             Diag.writeCrash(this, "startTunnel", error)
@@ -225,16 +212,26 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
 
         try {
-            val supported = Store.supportedActiveNodes()
-            require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
             Options.load(this)
+            val mode = TunnelModes.current()
+            val check = TunnelModes.checkStart(mode)
+            require(check.allowed) { check.message ?: "Режим подключения не готов" }
+            val supported = Store.supportedActiveNodes()
+            if (mode.requiresProxySelection) require(supported.isNotEmpty()) { "Нет поддерживаемых узлов" }
+
             val config = ConfigBuilder.build(supported, Store.activeId, Diag.runLogPath(this))
             if (!VpnController.isCurrent(ticket)) return
 
+            val needsTun = synchronized(resourceLock) {
+                val missing = pfd == null
+                tunReady = if (missing) CountDownLatch(1) else CountDownLatch(0)
+                missing
+            }
             server.startOrReloadService(config, OverrideOptions())
+            if (needsTun) awaitInitialTun(ticket)
             if (!VpnController.isCurrent(ticket)) return
 
-            val name = Store.activeNodeLabel() ?: supported.firstOrNull()?.name
+            val name = TunnelModes.activeLabel(mode)
             if (VpnController.completeConnected(ticket, name)) {
                 updateNotificationSafely("Защищено${name?.let { " · $it" } ?: ""}")
             }
@@ -243,6 +240,15 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             val message = error.message ?: "Ошибка перезагрузки"
             if (VpnController.fail(ticket, message)) finishFailedRuntime()
         }
+    }
+
+    private fun awaitInitialTun(ticket: VpnRuntimeTicket) {
+        val latch = tunReady
+        if (!latch.await(TUN_READY_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+            throw IllegalStateException("TUN не был создан за $TUN_READY_TIMEOUT_SEC с")
+        }
+        if (!VpnController.isCurrent(ticket)) return
+        check(pfd != null) { "TUN descriptor отсутствует после запуска ядра" }
     }
 
     private fun executeStop(ticket: VpnRuntimeTicket) {
@@ -263,6 +269,8 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     private fun closeEngineResources() {
         val resources = synchronized(resourceLock) {
+            tunReady.countDown()
+            tunReady = CountDownLatch(0)
             val captured = EngineResources(
                 servers = listOfNotNull(inFlightServer, commandServer).distinct(),
                 callback = networkCallback,
@@ -291,7 +299,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val descriptor: ParcelFileDescriptor?,
     )
 
-    // ── PlatformInterface ──────────────────────────────────────
     override fun openTun(options: TunOptions): Int {
         val builder = Builder()
         drainRoutes(options.getInet4Address()) { builder.addAddress(it.address(), it.prefix()) }
@@ -304,7 +311,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             v4routes++
         }
         if (v4routes == 0) builder.addRoute("0.0.0.0", 0)
-        // Add IPv6 only when libbox supplies it; unconditional ::/0 caused long v6 fallbacks.
         drainRoutes(options.getInet6RouteAddress()) { builder.addRoute(it.address(), it.prefix()) }
 
         runCatching { builder.addDnsServer(options.getDNSServerAddress().getValue()) }
@@ -318,6 +324,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val previous = synchronized(resourceLock) {
             val old = pfd
             pfd = descriptor
+            tunReady.countDown()
             old
         }
         runCatching { previous?.close() }
@@ -330,7 +337,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (!protect(fd)) throw IllegalStateException("protect($fd) failed")
     }
 
-    /** Android 8/9 use libbox procfs fallback; Android 10+ use the platform owner API below. */
     override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -423,7 +429,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 output.add(item)
             }
         } catch (_: Throwable) {
-            // libbox treats an empty iterator as no additional platform interfaces.
+            // Empty iterator means no extra platform interfaces.
         }
         return FixedNetworkInterfaceIterator(output)
     }
@@ -435,7 +441,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun clearDNSCache() {}
     override fun sendNotification(notification: LibboxNotification?) {}
 
-    // ── CommandServerHandler ───────────────────────────────────
     override fun serviceStop() {
         if (VpnController.snapshot.value.state == ConnState.Connected) {
             enqueue(VpnController.requestStop(null))
@@ -460,7 +465,6 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         Diag.appendRunLog(message)
     }
 
-    // ── helpers ────────────────────────────────────────────────
     private inline fun drainRoutes(
         iterator: RoutePrefixIterator?,
         action: (io.nekohasekai.libbox.RoutePrefix) -> Unit,
@@ -520,6 +524,7 @@ class NinetyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         const val ACTION_RELOAD = "pw.x4.ninety.action.RELOAD"
         private const val CHANNEL = "ninety_vpn"
         private const val NOTIF_ID = 1
+        private const val TUN_READY_TIMEOUT_SEC = 12L
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(
