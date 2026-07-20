@@ -7,6 +7,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import pw.x4.ninety.core.model.DomainMatch
@@ -151,6 +152,43 @@ class NinetyConfigBuilderTest {
     }
 
     @Test
+    fun `WARP direct builds without any proxy nodes`() {
+        val root = json.parseToJsonElement(
+            NinetyConfigBuilder.build(
+                nodes = emptyList(),
+                selection = null,
+                options = SingBoxOptions(warp = warpConfig(WarpMode.DIRECT)),
+            ),
+        ).jsonObject
+
+        val outbounds = root.getValue("outbounds").jsonArray.map { it.jsonObject }
+        assertEquals(listOf("direct"), outbounds.map { it.getValue("tag").jsonPrimitive.content })
+        assertFalse(outbounds.any { it.getValue("tag").jsonPrimitive.content in setOf("proxy", "auto") })
+        assertEquals("warp", root.getValue("route").jsonObject.getValue("final").jsonPrimitive.content)
+        assertEquals("warp", root.getValue("endpoints").jsonArray.single().jsonObject.getValue("tag").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `empty proxy config without WARP fails clearly`() {
+        val error = assertFailsWith<IllegalArgumentException> {
+            NinetyConfigBuilder.build(nodes = emptyList(), selection = null)
+        }
+        assertTrue(error.message.orEmpty().contains("Ninety-нода"))
+    }
+
+    @Test
+    fun `WARP chain without a proxy node fails clearly`() {
+        val error = assertFailsWith<IllegalArgumentException> {
+            NinetyConfigBuilder.build(
+                nodes = emptyList(),
+                selection = null,
+                options = SingBoxOptions(warp = warpConfig(WarpMode.CHAIN)),
+            )
+        }
+        assertTrue(error.message.orEmpty().contains("WARP Chain"))
+    }
+
+    @Test
     fun `WARP chain detours through selector and emits custom noise`() {
         val endpoint = json.parseToJsonElement(
             NinetyConfigBuilder.build(
@@ -184,17 +222,17 @@ class NinetyConfigBuilderTest {
     }
 
     @Test
-    fun `invalid WARP registration is omitted without changing default config`() {
-        val base = SingBoxConfigBuilder.build(listOf(configNode()))
+    fun `invalid enabled WARP registration fails instead of silently changing route`() {
         val invalid = warpConfig(WarpMode.DIRECT).copy(
             registration = registration().copy(privateKey = "invalid"),
         )
-        val actual = NinetyConfigBuilder.build(
-            listOf(configNode()),
-            options = SingBoxOptions(warp = invalid),
-        )
-
-        assertEquals(base, actual)
+        val error = assertFailsWith<IllegalArgumentException> {
+            NinetyConfigBuilder.build(
+                listOf(configNode()),
+                options = SingBoxOptions(warp = invalid),
+            )
+        }
+        assertTrue(error.message.orEmpty().contains("WARP включён"))
     }
 
     @Test
