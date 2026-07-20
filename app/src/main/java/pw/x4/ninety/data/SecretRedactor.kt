@@ -23,12 +23,12 @@ internal object SecretRedactor {
 
     fun redact(input: String): String = input
         .replace(shareLink) { match -> "${match.groupValues[1].lowercase()}://<redacted>" }
-        .replace(bearer, "$1<redacted>")
-        .replace(jsonSecret, "$1<redacted>$2")
+        .replace(bearer) { match -> "${match.groupValues[1]}<redacted>" }
+        .replace(jsonSecret) { match -> "${match.groupValues[1]}<redacted>${match.groupValues[2]}" }
         .replace(assignmentSecret) { match ->
             val key = match.groupValues[1]
             "$key=<redacted>"
         }
         .replace(uuid, "<uuid-redacted>")
-        .replace(sensitiveQuery, "$1<query-redacted>")
+        .replace(sensitiveQuery) { match -> "${match.groupValues[1]}<query-redacted>" }
 }
