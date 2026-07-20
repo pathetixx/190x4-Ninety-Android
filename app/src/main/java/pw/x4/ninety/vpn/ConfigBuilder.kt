@@ -10,7 +10,6 @@ import pw.x4.ninety.core.config.SingBoxOptions
 import pw.x4.ninety.core.config.TunStack
 import pw.x4.ninety.core.model.ProxyNode
 import pw.x4.ninety.core.model.ProxyProtocol
-import pw.x4.ninety.core.model.ProxySelection
 import pw.x4.ninety.core.model.RoutingRuleType
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Options
@@ -26,7 +25,11 @@ object ConfigBuilder {
         val configNodes = nodes.map { it.toConfigNode() }
         val mode = TunnelModes.current(opts)
         val selection = if (mode.requiresProxySelection) {
-            ProxySelection.fromPersisted(selectedId)
+            QualityRuntime.selectionForConfig(
+                persistedSelection = selectedId,
+                candidateNodeIds = configNodes.map(ConfigNode::id),
+                options = opts,
+            )
         } else {
             null
         }
