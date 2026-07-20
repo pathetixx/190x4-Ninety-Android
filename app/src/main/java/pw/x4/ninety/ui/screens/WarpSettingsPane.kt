@@ -33,6 +33,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.core.model.WarpRegistrationSanitizer
 import pw.x4.ninety.data.Options
+import pw.x4.ninety.ui.components.DesktopConfirmDialog
 import pw.x4.ninety.ui.components.PillButton
 import pw.x4.ninety.ui.components.SurfaceCard
 import pw.x4.ninety.ui.components.ToggleRow
@@ -50,6 +51,7 @@ fun WarpSettingsPane() {
     val options = Options.data
     var license by remember { mutableStateOf("") }
     var licenseError by remember { mutableStateOf<String?>(null) }
+    var confirmReset by remember { mutableStateOf(false) }
 
     LaunchedEffect(status.registered) {
         if (status.registered) {
@@ -193,7 +195,7 @@ fun WarpSettingsPane() {
     Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         PillButton("Применить") { WarpRuntime.applySettings() }
         PillButton(if (status.busy) "Сбрасываю…" else "Сбросить регистрацию", enabled = !status.busy) {
-            WarpRuntime.reset()
+            confirmReset = true
         }
     }
     Spacer(Modifier.height(10.dp))
@@ -202,6 +204,18 @@ fun WarpSettingsPane() {
         style = MonoStyle,
         color = Ink.TextLo,
     )
+
+    if (confirmReset) {
+        DesktopConfirmDialog(
+            kicker = "WARP · Reset",
+            title = "Сбросить регистрацию WARP?",
+            message = "Локальные ключи, токен устройства и WARP+ license будут удалены. Для повторного подключения потребуется новая регистрация.",
+            confirmLabel = "Сбросить",
+            destructive = true,
+            onDismiss = { confirmReset = false },
+            onConfirm = { WarpRuntime.reset() },
+        )
+    }
 }
 
 @Composable
