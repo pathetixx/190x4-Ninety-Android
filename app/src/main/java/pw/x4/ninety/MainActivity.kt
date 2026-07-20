@@ -9,11 +9,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import pw.x4.ninety.data.Prefs
-import pw.x4.ninety.data.Store
 import pw.x4.ninety.data.Updater
 import pw.x4.ninety.ui.NinetyApp
 import pw.x4.ninety.ui.theme.NinetyTheme
 import pw.x4.ninety.vpn.NinetyVpnService
+import pw.x4.ninety.vpn.TunnelModes
 import pw.x4.ninety.vpn.VpnController
 
 class MainActivity : ComponentActivity() {
@@ -44,15 +44,13 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
-    /** Тоггл VPN по интенту от QS-плитки (когда нужен был consent — плитка шлёт нас сюда). */
     private fun handleIntent(intent: Intent?) {
         if (intent?.action == ACTION_TOGGLE) {
-            intent.action = null // одноразово: не повторять тоггл при пересоздании активити
+            intent.action = null
             toggleVpn()
         }
     }
 
-    /** Тихая проверка обновлений при запуске → OTA-модалка, если версия новее и не «отложена». */
     private fun maybeCheckUpdate() {
         val prefs = Prefs.get(this)
         if (!prefs.autoUpdateCheck) return
@@ -63,14 +61,15 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    /** Автоподключение к последнему выбору при холодном старте. Тихо — только если
-     *  согласие на VPN уже выдано (prepare==null); диалог consent не навязываем. */
     private fun maybeAutoConnect() {
-        if (Prefs.get(this).autoConnect &&
+        if (
+            Prefs.get(this).autoConnect &&
             !VpnController.isActive &&
-            Store.hasRunnableSelection() &&
+            TunnelModes.checkStart().allowed &&
             VpnService.prepare(this) == null
-        ) startVpn()
+        ) {
+            startVpn()
+        }
     }
 
     private fun toggleVpn() {
@@ -78,16 +77,23 @@ class MainActivity : ComponentActivity() {
             NinetyVpnService.stop(this)
             return
         }
-        if (!Store.hasRunnableSelection()) {
-            Toast.makeText(this, "Сначала добавьте профиль и выберите узел или режим «Авто»", Toast.LENGTH_LONG).show()
+
+        val check = TunnelModes.checkStart()
+        if (!check.allowed) {
+            Toast.makeText(this, check.message ?: "Режим подключения не готов", Toast.LENGTH_LONG).show()
             return
         }
+
         val prepare = VpnService.prepare(this)
         if (prepare != null) vpnConsent.launch(prepare) else startVpn()
     }
 
     private fun startVpn() {
-        if (!Store.hasRunnableSelection()) return
+        val check = TunnelModes.checkStart()
+        if (!check.allowed) {
+            Toast.makeText(this, check.message ?: "Режим подключения не готов", Toast.LENGTH_LONG).show()
+            return
+        }
         NinetyVpnService.start(this)
     }
 
