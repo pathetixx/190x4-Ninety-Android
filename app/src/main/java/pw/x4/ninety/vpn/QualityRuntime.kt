@@ -122,14 +122,18 @@ object QualityRuntime {
             }
         }
 
-        snapshot = Snapshot(
+        val next = Snapshot(
             profileId = profileId,
             recommendedNodeId = decision.state.recommendedNodeId,
             ratings = decision.ratings,
             reason = decision.reason,
             updatedAtMs = decision.state.updatedAtMs,
         )
-        maybeApplyRecommendation(decision.state.recommendedNodeId, nowMs)
+        main.post {
+            if (!initialized) return@post
+            snapshot = next
+            maybeApplyRecommendation(decision.state.recommendedNodeId, nowMs)
+        }
     }
 
     fun rating(nodeId: String): NodeQualityRating? = snapshot.ratings[nodeId]
@@ -158,13 +162,11 @@ object QualityRuntime {
         if (nowMs - lastReloadAtMs < MIN_RELOAD_INTERVAL_MS) return
 
         lastReloadAtMs = nowMs
-        main.post {
-            if (
-                initialized && Store.isAutoActive && VpnController.state == ConnState.Connected &&
-                targetNodeId != appliedRecommendationId
-            ) {
-                NinetyVpnService.reload(context)
-            }
+        if (
+            initialized && Store.isAutoActive && VpnController.state == ConnState.Connected &&
+            targetNodeId != appliedRecommendationId
+        ) {
+            NinetyVpnService.reload(context)
         }
     }
 
@@ -178,12 +180,22 @@ object QualityRuntime {
         val recommendation = state?.recommendedNodeId
             ?.takeIf(candidates::contains)
             ?.takeIf { ratings[it]?.available == true }
-        snapshot = Snapshot(
-            profileId = profileId,
-            recommendedNodeId = recommendation,
-            ratings = ratings,
-            updatedAtMs = state?.updatedAtMs ?: 0,
+        publishSnapshot(
+            Snapshot(
+                profileId = profileId,
+                recommendedNodeId = recommendation,
+                ratings = ratings,
+                updatedAtMs = state?.updatedAtMs ?: 0,
+            ),
         )
+    }
+
+    private fun publishSnapshot(value: Snapshot) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            snapshot = value
+        } else {
+            main.post { if (initialized) snapshot = value }
+        }
     }
 
     private fun pruneLocked() {
