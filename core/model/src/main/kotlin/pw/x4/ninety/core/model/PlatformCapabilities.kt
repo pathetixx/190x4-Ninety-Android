@@ -23,7 +23,7 @@ data class PlatformCapabilities(
             perAppRouting = true,
             alwaysOnVpn = true,
             nativeKillSwitch = false,
-            warp = false,
+            warp = true,
             naiveProxy = false,
             trustTunnel = false,
             dpiSidecar = false,
