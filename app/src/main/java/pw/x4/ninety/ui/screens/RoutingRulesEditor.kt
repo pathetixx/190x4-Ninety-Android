@@ -56,7 +56,7 @@ internal fun RoutingRulesEditor(
 ) {
     val packageRoutingSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
     var editing by remember { mutableStateOf<RoutingRule?>(null) }
-    var showNew by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
 
     SurfaceCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -70,7 +70,7 @@ internal fun RoutingRulesEditor(
                 )
             }
             Spacer(Modifier.width(12.dp))
-            PillButton("Добавить") { showNew = true }
+            PillButton("Добавить") { adding = true }
         }
 
         if (!packageRoutingSupported) {
@@ -92,20 +92,10 @@ internal fun RoutingRulesEditor(
                         onRulesChange(rules.toMutableList().apply { set(index, rule.copy(enabled = enabled)) })
                     },
                     onMoveUp = {
-                        if (index > 0) {
-                            onRulesChange(rules.toMutableList().apply {
-                                val previous = removeAt(index - 1)
-                                add(index, previous)
-                            })
-                        }
+                        if (index > 0) onRulesChange(rules.swap(index, index - 1))
                     },
                     onMoveDown = {
-                        if (index < rules.lastIndex) {
-                            onRulesChange(rules.toMutableList().apply {
-                                val current = removeAt(index)
-                                add(index + 1, current)
-                            })
-                        }
+                        if (index < rules.lastIndex) onRulesChange(rules.swap(index, index + 1))
                     },
                     onEdit = { editing = rule },
                     onDelete = { onRulesChange(rules.filterNot { it.id == rule.id }) },
@@ -115,8 +105,11 @@ internal fun RoutingRulesEditor(
         }
     }
 
+    Spacer(Modifier.height(14.dp))
+    WarpSettingsPane()
+
     val dialogRule = when {
-        showNew -> RoutingRule(id = UUID.randomUUID().toString())
+        adding -> RoutingRule(id = UUID.randomUUID().toString())
         editing != null -> editing
         else -> null
     }
@@ -124,19 +117,14 @@ internal fun RoutingRulesEditor(
         RuleDialog(
             initial = rule,
             packageRoutingSupported = packageRoutingSupported,
-            onDismiss = {
-                showNew = false
-                editing = null
-            },
+            onDismiss = { adding = false; editing = null },
             onSave = { saved ->
-                val existingIndex = rules.indexOfFirst { it.id == saved.id }
-                val next = if (existingIndex >= 0) {
-                    rules.toMutableList().apply { set(existingIndex, saved) }
-                } else {
-                    rules + saved
-                }
-                onRulesChange(next)
-                showNew = false
+                val existing = rules.indexOfFirst { it.id == saved.id }
+                onRulesChange(
+                    if (existing < 0) rules + saved
+                    else rules.toMutableList().apply { set(existing, saved) },
+                )
+                adding = false
                 editing = null
             },
         )
@@ -155,29 +143,26 @@ private fun RuleCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(12.dp)
     val unsupported = rule.type == RoutingRuleType.PROCESS_NAME ||
         (rule.type == RoutingRuleType.ANDROID_PACKAGE && !packageRoutingSupported)
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(shape)
+            .clip(RoundedCornerShape(12.dp))
             .background(Ink.Ink3)
-            .border(1.dp, if (rule.enabled) Ink.Line2 else Ink.Line1, shape)
+            .border(1.dp, if (rule.enabled) Ink.Line2 else Ink.Line1, RoundedCornerShape(12.dp))
             .padding(12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier
-                    .size(9.dp)
-                    .background(
-                        when {
-                            unsupported -> Ink.Warn
-                            rule.enabled -> NinetyState.pack.accent
-                            else -> Ink.TextFaint
-                        },
-                        CircleShape,
-                    ),
+                Modifier.size(9.dp).background(
+                    when {
+                        unsupported -> Ink.Warn
+                        rule.enabled -> NinetyState.pack.accent
+                        else -> Ink.TextFaint
+                    },
+                    CircleShape,
+                ),
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f).clickable { onEdit() }) {
@@ -200,24 +185,19 @@ private fun RuleCard(
             Spacer(Modifier.width(10.dp))
             MiniToggle(rule.enabled, onToggle)
         }
-
         if (unsupported) {
             Spacer(Modifier.height(9.dp))
             Text(
-                if (rule.type == RoutingRuleType.PROCESS_NAME) {
-                    "PROCESS_NAME поддерживается только desktop-клиентом"
-                } else {
-                    "На этой версии Android package rule не будет добавлено в конфиг"
-                },
+                if (rule.type == RoutingRuleType.PROCESS_NAME) "PROCESS_NAME поддерживается только desktop-клиентом"
+                else "На этой версии Android package rule не будет добавлено в конфиг",
                 style = KickerStyle,
                 color = Ink.Warn,
             )
         }
-
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            CompactAction("↑", enabled = index > 0, onClick = onMoveUp)
-            CompactAction("↓", enabled = index < total - 1, onClick = onMoveDown)
+            CompactAction("↑", index > 0, onClick = onMoveUp)
+            CompactAction("↓", index < total - 1, onClick = onMoveDown)
             Spacer(Modifier.weight(1f))
             CompactAction("ИЗМ.", onClick = onEdit)
             CompactAction("УДАЛ.", danger = true, onClick = onDelete)
@@ -260,10 +240,7 @@ private fun RuleDialog(
     var valuesText by remember(initial.id) { mutableStateOf(initial.values.joinToString("\n")) }
     var error by remember(initial.id) { mutableStateOf<String?>(null) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier
                 .padding(horizontal = 18.dp)
@@ -282,40 +259,23 @@ private fun RuleDialog(
                 color = Ink.TextHi,
             )
             Spacer(Modifier.height(16.dp))
-
             SelectorRow(
-                label = "Тип",
-                value = type,
-                options = buildList {
+                "Тип",
+                type,
+                buildList {
                     add(RoutingRuleType.DOMAIN)
                     add(RoutingRuleType.IP)
-                    if (packageRoutingSupported || initial.type == RoutingRuleType.ANDROID_PACKAGE) {
-                        add(RoutingRuleType.ANDROID_PACKAGE)
-                    }
+                    if (packageRoutingSupported || initial.type == RoutingRuleType.ANDROID_PACKAGE) add(RoutingRuleType.ANDROID_PACKAGE)
                     if (initial.type == RoutingRuleType.PROCESS_NAME) add(RoutingRuleType.PROCESS_NAME)
                 },
-                display = ::typeLabel,
-                onValue = { type = it; error = null },
-            )
+                ::typeLabel,
+            ) { type = it; error = null }
             if (type == RoutingRuleType.DOMAIN) {
                 Spacer(Modifier.height(10.dp))
-                SelectorRow(
-                    label = "Совпадение",
-                    value = match,
-                    options = DomainMatch.entries.toList(),
-                    display = ::matchLabel,
-                    onValue = { match = it },
-                )
+                SelectorRow("Совпадение", match, DomainMatch.entries.toList(), ::matchLabel) { match = it }
             }
             Spacer(Modifier.height(10.dp))
-            SelectorRow(
-                label = "Действие",
-                value = action,
-                options = RoutingRuleAction.entries.toList(),
-                display = ::actionLabel,
-                onValue = { action = it },
-            )
-
+            SelectorRow("Действие", action, RoutingRuleAction.entries.toList(), ::actionLabel) { action = it }
             Spacer(Modifier.height(14.dp))
             Text("ЗНАЧЕНИЯ · ПО ОДНОМУ НА СТРОКУ", style = KickerStyle, color = Ink.TextFaint)
             Spacer(Modifier.height(7.dp))
@@ -328,9 +288,7 @@ private fun RuleDialog(
                     .border(1.dp, if (error == null) Ink.Line2 else Ink.Err, RoundedCornerShape(10.dp))
                     .padding(12.dp),
             ) {
-                if (valuesText.isBlank()) {
-                    Text(valueHint(type), style = MonoStyle, color = Ink.TextFaint)
-                }
+                if (valuesText.isBlank()) Text(valueHint(type), style = MonoStyle, color = Ink.TextFaint)
                 BasicTextField(
                     value = valuesText,
                     onValueChange = { valuesText = it; error = null },
@@ -339,7 +297,6 @@ private fun RuleDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-
             if (type == RoutingRuleType.ANDROID_PACKAGE && !packageRoutingSupported) {
                 Spacer(Modifier.height(9.dp))
                 WarningStrip("Package routing требует Android 10+. Сохранение отключено.")
@@ -348,11 +305,7 @@ private fun RuleDialog(
                 Spacer(Modifier.height(9.dp))
                 WarningStrip("Process rules предназначены для desktop и не попадут в Android config.")
             }
-            error?.let {
-                Spacer(Modifier.height(9.dp))
-                Text(it, style = MonoStyle, color = Ink.Err)
-            }
-
+            error?.let { Spacer(Modifier.height(9.dp)); Text(it, style = MonoStyle, color = Ink.Err) }
             Spacer(Modifier.height(17.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton("Отмена", modifier = Modifier.weight(1f), onClick = onDismiss)
@@ -362,19 +315,11 @@ private fun RuleDialog(
                     enabled = type != RoutingRuleType.PROCESS_NAME &&
                         (type != RoutingRuleType.ANDROID_PACKAGE || packageRoutingSupported),
                 ) {
-                    val raw = initial.copy(
-                        enabled = initial.enabled,
-                        type = type,
-                        match = match,
-                        action = action,
-                        values = valuesText.lines(),
+                    val result = RoutingRuleSanitizer.sanitize(
+                        initial.copy(type = type, match = match, action = action, values = valuesText.lines()),
                     )
-                    val result = RoutingRuleSanitizer.sanitize(raw)
-                    if (result.rule.values.isEmpty()) {
-                        error = "Нет ни одного валидного значения"
-                    } else {
-                        onSave(result.rule)
-                    }
+                    if (result.rule.values.isEmpty()) error = "Нет ни одного валидного значения"
+                    else onSave(result.rule)
                 }
             }
         }
@@ -408,10 +353,7 @@ private fun <T> SelectorRow(
                 options.forEach { option ->
                     DropdownMenuItem(
                         text = { Text(display(option), style = MonoStyle) },
-                        onClick = {
-                            expanded = false
-                            onValue(option)
-                        },
+                        onClick = { expanded = false; onValue(option) },
                     )
                 }
             }
@@ -476,6 +418,9 @@ private fun WarningStrip(text: String) {
         Text(text, style = MonoStyle, color = Ink.Warn, modifier = Modifier.weight(1f))
     }
 }
+
+private fun List<RoutingRule>.swap(first: Int, second: Int): List<RoutingRule> =
+    toMutableList().apply { val value = this[first]; this[first] = this[second]; this[second] = value }
 
 private fun ruleTitle(rule: RoutingRule): String =
     "${typeLabel(rule.type)} · ${if (rule.type == RoutingRuleType.DOMAIN) matchLabel(rule.match) + " · " else ""}${actionLabel(rule.action)}"
