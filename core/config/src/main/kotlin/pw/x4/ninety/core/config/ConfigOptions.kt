@@ -52,6 +52,7 @@ data class SingBoxOptions(
     val ipv6Mode: Ipv6Mode = Ipv6Mode.DISABLE,
     val customRules: List<RoutingRule> = emptyList(),
     val routingPlatform: RoutingPlatform = RoutingPlatform.ANDROID,
+    val warp: WarpConfig? = null,
     val dnsRemote: String = "https://1.1.1.1/dns-query",
     val dnsDirect: String = "udp://77.88.8.8",
     val fakeDns: Boolean = false,
