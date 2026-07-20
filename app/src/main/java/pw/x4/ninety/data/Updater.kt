@@ -25,7 +25,7 @@ import pw.x4.ninety.BuildConfig
 object Updater {
     private const val API = "https://api.github.com/repos/pathetixx/190x4-Ninety-Android/releases/latest"
 
-    private val main = Handler(Looper.getMainLooper())
+    private val main by lazy { Handler(Looper.getMainLooper()) }
     private val worker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "ninety-ota")
     }
