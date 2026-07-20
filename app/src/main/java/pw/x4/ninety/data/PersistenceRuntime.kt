@@ -2,16 +2,26 @@ package pw.x4.ninety.data
 
 import android.content.Context
 import android.util.Log
+import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import pw.x4.ninety.data.persistence.NinetyStorage
 import pw.x4.ninety.data.persistence.PreferenceSnapshot
 import pw.x4.ninety.data.persistence.StorageLoadResult
 import pw.x4.ninety.data.persistence.StorageSource
 
-/** Synchronous compatibility boundary while Store/Prefs still expose their legacy APIs. */
+/** Startup is synchronous; all hot-path Room/DataStore writes are serialized in the background. */
 internal object PersistenceRuntime {
     private const val TAG = "NinetyStorage"
+
+    private val writerDispatcher = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "ninety-storage-writer")
+    }.asCoroutineDispatcher()
+    private val writerScope = CoroutineScope(SupervisorJob() + writerDispatcher)
 
     @Volatile
     private var storage: NinetyStorage? = null
@@ -34,20 +44,20 @@ internal object PersistenceRuntime {
 
     fun persistGraph(nodes: List<Node>, profiles: List<Profile>) {
         val target = storage ?: return
-        runCatching {
-            runBlocking(Dispatchers.IO) {
-                target.replaceGraph(
-                    nodes = nodes.map(Node::toPersistedNode),
-                    profiles = profiles.map(Profile::toPersistedProfile),
-                )
-            }
-        }.onFailure { Log.e(TAG, "Room graph commit failed; legacy JSON remains authoritative", it) }
+        val persistedNodes = nodes.map(Node::toPersistedNode)
+        val persistedProfiles = profiles.map(Profile::toPersistedProfile)
+        writerScope.launch {
+            runCatching {
+                target.replaceGraph(nodes = persistedNodes, profiles = persistedProfiles)
+            }.onFailure { Log.e(TAG, "Room graph commit failed", it) }
+        }
     }
 
     fun persistPreferences(snapshot: PreferenceSnapshot) {
         val target = storage ?: return
-        runCatching {
-            runBlocking(Dispatchers.IO) { target.writePreferences(snapshot) }
-        }.onFailure { Log.e(TAG, "DataStore commit failed; SharedPreferences remains authoritative", it) }
+        writerScope.launch {
+            runCatching { target.writePreferences(snapshot) }
+                .onFailure { Log.e(TAG, "DataStore commit failed", it) }
+        }
     }
 }
