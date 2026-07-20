@@ -10,7 +10,6 @@ import pw.x4.ninety.core.config.SingBoxOptions
 import pw.x4.ninety.core.config.TunStack
 import pw.x4.ninety.core.model.ProxyNode
 import pw.x4.ninety.core.model.ProxyProtocol
-import pw.x4.ninety.core.model.ProxySelection
 import pw.x4.ninety.core.model.RoutingRuleType
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Options
@@ -27,12 +26,19 @@ object ConfigBuilder {
         selectedId: String?,
         logPath: String? = null,
         opts: Options.Data = Options.data,
-    ): String = NinetyConfigBuilder.build(
-        nodes = nodes.map { it.toConfigNode() },
-        selection = ProxySelection.fromPersisted(selectedId),
-        logPath = logPath,
-        options = opts.toCoreOptions(),
-    )
+    ): String {
+        val configNodes = nodes.map { it.toConfigNode() }
+        return NinetyConfigBuilder.build(
+            nodes = configNodes,
+            selection = QualityRuntime.selectionForConfig(
+                persistedSelection = selectedId,
+                candidateNodeIds = configNodes.map(ConfigNode::id),
+                options = opts,
+            ),
+            logPath = logPath,
+            options = opts.toCoreOptions(),
+        )
+    }
 
     fun tagOf(node: Node): String = tagOfId(node.id)
 
