@@ -17,11 +17,9 @@ import pw.x4.ninety.core.model.RoutingRule
 import pw.x4.ninety.core.model.RoutingRuleAction
 import pw.x4.ninety.core.model.RoutingRuleSanitizer
 import pw.x4.ninety.core.model.RoutingRuleType
+import pw.x4.ninety.core.model.WarpMode
 
-/**
- * Product-level config facade. The protocol/DNS base builder stays stable while optional advanced
- * features decorate the result in deterministic priority order.
- */
+/** Product-level deterministic config facade. */
 object NinetyConfigBuilder {
     private val json = Json { ignoreUnknownKeys = false }
 
@@ -31,8 +29,27 @@ object NinetyConfigBuilder {
         logPath: String? = null,
         options: SingBoxOptions = SingBoxOptions(),
     ): String {
-        val base = SingBoxConfigBuilder.build(nodes, selection, logPath, options)
+        val warpRequested = options.warp?.settings?.enabled == true
         val warpEndpoint = WarpEndpointBuilder.build(options.warp)
+        require(!warpRequested || warpEndpoint != null) {
+            "WARP включён, но регистрация, ключи или endpoint некорректны"
+        }
+
+        val warpMode = options.warp?.settings?.mode
+        if (warpEndpoint != null && warpMode == WarpMode.CHAIN) {
+            require(nodes.isNotEmpty()) { "Для WARP Chain нужна Ninety-нода или Auto" }
+        }
+        if (nodes.isEmpty()) {
+            require(warpEndpoint != null && warpMode == WarpMode.DIRECT) {
+                "Для обычного VPN нужна Ninety-нода или Auto"
+            }
+        }
+
+        val base = if (nodes.isEmpty()) {
+            DirectTunnelConfigBuilder.build(logPath, options)
+        } else {
+            SingBoxConfigBuilder.build(nodes, selection, logPath, options)
+        }
         val protectedOutbound = if (warpEndpoint == null) PROXY_TAG else WarpEndpointBuilder.TAG
         val custom = options.customRules.mapNotNull { it.toSingBox(options.routingPlatform, protectedOutbound) }
         if (custom.isEmpty() && warpEndpoint == null) return base
@@ -122,7 +139,6 @@ object NinetyConfigBuilder {
         }
     }
 
-    /** sniff and DNS hijack must always remain above user terminal rules. */
     private fun JsonArray.serviceRulePrefixLength(): Int {
         var index = 0
         if (getOrNull(index)?.jsonObject?.get("action") == JsonPrimitive("sniff")) index++
