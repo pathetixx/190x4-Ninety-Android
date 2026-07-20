@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.wireguard.crypto.KeyPair
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -52,7 +54,7 @@ object WarpRuntime {
         this.context = context.applicationContext
         store = WarpStore.create(this.context)
         registration = store.read()
-        publish()
+        publishNow()
     }
 
     fun configForBuild(options: Options.Data): WarpConfig? {
@@ -74,30 +76,39 @@ object WarpRuntime {
 
     fun register(license: String? = null) {
         if (!::store.isInitialized || snapshot.busy) return
-        snapshot = snapshot.copy(busy = true, error = null)
+        publishAsync(busy = true)
         scope.launch {
             operation.withLock {
+                val old = registration
+                var provisional: WarpRegistration? = null
                 runCatching {
                     val normalizedLicense = WarpRegistrationSanitizer.normalizeLicense(license)
-                    val old = registration
                     val pair = KeyPair()
-                    val response = WarpApi.register(pair.privateKey.toBase64(), pair.publicKey.toBase64())
-                    val activated = if (normalizedLicense == null) response else WarpApi.activate(response, normalizedLicense)
-                    val clean = requireNotNull(WarpRegistrationSanitizer.sanitize(activated).registration)
+                    provisional = WarpApi.register(pair.privateKey.toBase64(), pair.publicKey.toBase64())
+                    val activated = normalizedLicense?.let { WarpApi.activate(requireNotNull(provisional), it) }
+                        ?: requireNotNull(provisional)
+                    val clean = requireNotNull(WarpRegistrationSanitizer.sanitize(activated).registration) {
+                        "Cloudflare returned an invalid WARP registration"
+                    }
                     store.write(clean)
                     registration = clean
-                    publish(busy = false)
+                    publishAsync(busy = false)
                     old?.takeIf { it.registrationId.isNotBlank() && it.registrationId != clean.registrationId }
                         ?.let { runCatching { WarpApi.delete(it.registrationId, it.accessToken) } }
                     reloadIfActive()
-                }.onFailure { publish(busy = false, error = it.message ?: "WARP registration failed") }
+                }.onFailure { error ->
+                    provisional?.takeIf { it.registrationId.isNotBlank() && it.registrationId != old?.registrationId }
+                        ?.let { runCatching { WarpApi.delete(it.registrationId, it.accessToken) } }
+                    registration = old
+                    publishAsync(busy = false, error = error.message ?: "WARP registration failed")
+                }
             }
         }
     }
 
     fun reset() {
         if (!::store.isInitialized || snapshot.busy) return
-        snapshot = snapshot.copy(busy = true, error = null)
+        publishAsync(busy = true)
         scope.launch {
             operation.withLock {
                 val old = registration
@@ -106,7 +117,7 @@ object WarpRuntime {
                 store.clear()
                 registration = null
                 Options.update(context) { it.copy(warpEnabled = false) }
-                publish(busy = false)
+                publishAsync(busy = false)
                 reloadIfActive()
             }
         }
@@ -118,7 +129,7 @@ object WarpRuntime {
         if (VpnController.isActive) NinetyVpnService.reload(context)
     }
 
-    private fun publish(busy: Boolean = false, error: String? = null) {
+    private fun publishNow(busy: Boolean = false, error: String? = null) {
         val current = registration
         snapshot = Snapshot(
             registered = current != null,
@@ -129,14 +140,18 @@ object WarpRuntime {
             error = error,
         )
     }
+
+    private fun publishAsync(busy: Boolean, error: String? = null) {
+        scope.launch { withContext(Dispatchers.Main.immediate) { publishNow(busy, error) } }
+    }
 }
 
 private object WarpApi {
     private const val BASE = "https://api.cloudflareclient.com/v0a2158"
     private const val CLIENT_VERSION = "a-6.10-2158"
-    private const val MAX_BODY = 1024 * 1024
+    private const val MAX_BODY = 1024 * 1024L
     private val jsonType = "application/json; charset=utf-8".toMediaType()
-    private val client = OkHttpClient.Builder().callTimeout(java.time.Duration.ofSeconds(20)).build()
+    private val client = OkHttpClient.Builder().callTimeout(Duration.ofSeconds(20)).build()
 
     fun register(privateKey: String, publicKey: String): WarpRegistration {
         val body = JSONObject()
@@ -148,7 +163,8 @@ private object WarpApi {
             .put("model", "Ninety/190x4")
             .put("locale", "en_US")
             .put("warp_enabled", true)
-        val root = execute(Request.Builder().url("$BASE/reg").post(body.toString().toRequestBody(jsonType)).headers())
+        val request = requestBuilder("$BASE/reg").post(body.toString().toRequestBody(jsonType)).build()
+        val root = execute(request)
         val account = root.getJSONObject("account")
         val config = root.getJSONObject("config")
         val peer = config.getJSONArray("peers").getJSONObject(0)
@@ -170,10 +186,10 @@ private object WarpApi {
 
     fun activate(source: WarpRegistration, license: String): WarpRegistration {
         val body = JSONObject().put("license", license)
-        val root = execute(
-            Request.Builder().url("$BASE/reg/${source.registrationId}/account")
-                .patch(body.toString().toRequestBody(jsonType)).headers(source.accessToken),
-        )
+        val request = requestBuilder("$BASE/reg/${source.registrationId}/account", source.accessToken)
+            .patch(body.toString().toRequestBody(jsonType))
+            .build()
+        val root = execute(request)
         return source.copy(
             license = root.optString("license").ifBlank { license },
             warpPlus = root.optBoolean("warp_plus", source.warpPlus),
@@ -182,24 +198,23 @@ private object WarpApi {
     }
 
     fun delete(id: String, token: String) {
-        val request = Request.Builder().url("$BASE/reg/$id").delete().headers(token).build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(requestBuilder("$BASE/reg/$id", token).delete().build()).execute().use { response ->
             if (!response.isSuccessful && response.code != 404) error("Cloudflare delete ${response.code}")
         }
     }
 
-    private fun Request.Builder.headers(token: String? = null): Request {
-        header("User-Agent", "okhttp/3.12.1")
-        header("CF-Client-Version", CLIENT_VERSION)
-        token?.let { header("Authorization", "Bearer $it") }
-        return build()
-    }
+    private fun requestBuilder(url: String, token: String? = null): Request.Builder = Request.Builder()
+        .url(url)
+        .header("User-Agent", "okhttp/3.12.1")
+        .header("CF-Client-Version", CLIENT_VERSION)
+        .apply { token?.let { header("Authorization", "Bearer $it") } }
 
     private fun execute(request: Request): JSONObject = client.newCall(request).execute().use { response ->
         val body = response.body ?: error("Cloudflare returned an empty response")
         if (body.contentLength() > MAX_BODY) error("Cloudflare response is too large")
-        val text = body.charStream().readText().take(MAX_BODY + 1)
-        if (text.length > MAX_BODY) error("Cloudflare response is too large")
+        val bytes = body.source().readByteArray(MAX_BODY + 1)
+        if (bytes.size > MAX_BODY) error("Cloudflare response is too large")
+        val text = bytes.toString(Charsets.UTF_8)
         if (!response.isSuccessful) error("Cloudflare ${response.code}: ${text.take(240)}")
         JSONObject(text)
     }
