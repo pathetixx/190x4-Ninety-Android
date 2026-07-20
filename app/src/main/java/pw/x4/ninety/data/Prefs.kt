@@ -84,6 +84,13 @@ class Prefs private constructor(
             legacyWrite = { putNullableString(KEY_OPTIONS_JSON, value) },
         )
 
+    var qualityJson: String?
+        get() = state.get().qualityJson
+        set(value) = update(
+            transform = { it.copy(qualityJson = value) },
+            legacyWrite = { putNullableString(KEY_QUALITY_JSON, value) },
+        )
+
     internal val snapshot: PreferenceSnapshot
         get() = state.get()
 
@@ -118,6 +125,7 @@ class Prefs private constructor(
         private const val KEY_SKIPPED_VERSION = "skipped_version"
         private const val KEY_LAST_VERSION = "last_seen_version_code"
         private const val KEY_OPTIONS_JSON = "options_json"
+        private const val KEY_QUALITY_JSON = "quality_json"
 
         @Volatile
         private var instance: Prefs? = null
@@ -144,6 +152,7 @@ class Prefs private constructor(
                 skippedVersion = sp.getString(KEY_SKIPPED_VERSION, null),
                 lastSeenVersionCode = sp.getInt(KEY_LAST_VERSION, 0),
                 optionsJson = sp.getString(KEY_OPTIONS_JSON, null),
+                qualityJson = sp.getString(KEY_QUALITY_JSON, null),
             )
         }
     }
