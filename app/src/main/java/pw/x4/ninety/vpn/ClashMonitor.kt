@@ -79,21 +79,22 @@ object ClashMonitor {
         reconnectAttempt = 0
         val next = generation.incrementAndGet()
         currentGeneration = next
-        publish { Snapshot(phase = ProbePhase.Connecting) }
+        publish(next) { Snapshot(phase = ProbePhase.Connecting) }
         scheduleConnect(next, 0)
     }
 
     fun stop() {
         if (!running && snapshot.phase == ProbePhase.Offline) return
         running = false
-        currentGeneration = generation.incrementAndGet()
+        val stoppedGeneration = generation.incrementAndGet()
+        currentGeneration = stoppedGeneration
         currentClientEpoch = clientEpoch.incrementAndGet()
         timeoutFuture?.cancel(false)
         timeoutFuture = null
         val old = client
         client = null
         executor.execute { runCatching { old?.disconnect() } }
-        publish { Snapshot() }
+        publishStopped(stoppedGeneration)
     }
 
     fun urlTestAll() {
@@ -109,7 +110,7 @@ object ClashMonitor {
         if (!isCurrent(session)) return
         val epoch = clientEpoch.incrementAndGet()
         currentClientEpoch = epoch
-        publish { it.copy(phase = ProbePhase.Connecting, lastError = null) }
+        publish(session, epoch) { it.copy(phase = ProbePhase.Connecting, lastError = null) }
         val old = client
         client = null
         runCatching { old?.disconnect() }
@@ -135,7 +136,7 @@ object ClashMonitor {
     private fun requestProbe(session: Long, manual: Boolean) {
         if (!isCurrent(session)) return
         if (!canProbe()) {
-            publish {
+            publish(session) {
                 it.copy(
                     phase = ProbePhase.Ready,
                     lastError = if (manual) "В режиме WARP Direct proxy-пинги не используются" else null,
@@ -148,10 +149,12 @@ object ClashMonitor {
             scheduleReconnect(session, currentClientEpoch, "Монитор ядра ещё не подключён")
             return
         }
+        val epoch = currentClientEpoch
+        if (!isCurrent(session, epoch) || client !== current) return
 
         val probeCycle = cycle.incrementAndGet()
         activeCycle = probeCycle
-        publish {
+        publish(session, epoch) {
             it.copy(
                 phase = ProbePhase.Testing,
                 probeCycle = probeCycle,
@@ -161,7 +164,7 @@ object ClashMonitor {
         timeoutFuture?.cancel(false)
         runCatching { current.urlTest(AUTO_GROUP) }
             .onFailure { error ->
-                publish {
+                publish(session, epoch) {
                     it.copy(
                         phase = ProbePhase.Error,
                         lastError = error.message ?: "Не удалось запустить проверку",
@@ -171,14 +174,14 @@ object ClashMonitor {
             }
 
         executor.schedule({
-            if (isCurrent(session) && activeCycle == probeCycle && resultCycle < probeCycle) {
+            if (isCurrent(session, epoch) && activeCycle == probeCycle && resultCycle < probeCycle) {
                 runCatching { client?.urlTest(AUTO_GROUP) }
             }
         }, RETRY_DELAY_MS, TimeUnit.MILLISECONDS)
 
         timeoutFuture = executor.schedule({
-            if (!isCurrent(session) || activeCycle != probeCycle) return@schedule
-            publish { currentSnapshot ->
+            if (!isCurrent(session, epoch) || activeCycle != probeCycle) return@schedule
+            publish(session, epoch) { currentSnapshot ->
                 if (currentSnapshot.probeCycle != probeCycle || !currentSnapshot.testing) {
                     currentSnapshot
                 } else if (currentSnapshot.delays.values.any(::validDelay)) {
@@ -199,7 +202,7 @@ object ClashMonitor {
     private fun handleConnected(session: Long, epoch: Long) {
         if (!isCurrent(session, epoch)) return
         reconnectAttempt = 0
-        publish {
+        publish(session, epoch) {
             it.copy(
                 connected = true,
                 phase = if (canProbe()) ProbePhase.Connecting else ProbePhase.Ready,
@@ -223,7 +226,7 @@ object ClashMonitor {
         if (!isCurrent(session, epoch)) return
         val delay = (RECONNECT_BASE_MS shl reconnectAttempt.coerceAtMost(4)).coerceAtMost(RECONNECT_MAX_MS)
         reconnectAttempt++
-        publish {
+        publish(session, epoch) {
             it.copy(
                 connected = false,
                 phase = ProbePhase.Connecting,
@@ -237,11 +240,12 @@ object ClashMonitor {
         if (!isCurrent(session, epoch)) return
         val up = runCatching { message.uplink }.getOrDefault(0L)
         val down = runCatching { message.downlink }.getOrDefault(0L)
-        publish { it.copy(up = up, down = down, connected = true) }
+        publish(session, epoch) { it.copy(up = up, down = down, connected = true) }
     }
 
     private fun handleGroups(session: Long, epoch: Long, message: OutboundGroupIterator?) {
         if (!isCurrent(session, epoch) || message == null) return
+        val completedCycle = activeCycle
         val delays = linkedMapOf<String, Int>()
         var selectorNow: String? = null
         var autoNow: String? = null
@@ -265,9 +269,9 @@ object ClashMonitor {
             return
         }
 
-        val completedCycle = activeCycle
+        if (!isCurrent(session, epoch)) return
         if (delays.isNotEmpty()) resultCycle = completedCycle
-        publish { previous ->
+        publish(session, epoch) { previous ->
             val expectedTags = Store.supportedActiveNodes().map { ConfigBuilder.tagOf(it) }.toSet()
             val currentDelays = delays.filterKeys { it in expectedTags }
             val allReturned = expectedTags.isNotEmpty() && expectedTags.all(currentDelays::containsKey)
@@ -304,8 +308,22 @@ object ClashMonitor {
     private fun isCurrent(session: Long, epoch: Long): Boolean =
         isCurrent(session) && epoch == currentClientEpoch
 
-    private fun publish(transform: (Snapshot) -> Snapshot) {
-        main.post { snapshot = transform(snapshot) }
+    private fun publish(session: Long, transform: (Snapshot) -> Snapshot) {
+        main.post {
+            if (isCurrent(session)) snapshot = transform(snapshot)
+        }
+    }
+
+    private fun publish(session: Long, epoch: Long, transform: (Snapshot) -> Snapshot) {
+        main.post {
+            if (isCurrent(session, epoch)) snapshot = transform(snapshot)
+        }
+    }
+
+    private fun publishStopped(session: Long) {
+        main.post {
+            if (!running && currentGeneration == session) snapshot = Snapshot()
+        }
     }
 
     private class SessionHandler(
