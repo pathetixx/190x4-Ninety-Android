@@ -24,10 +24,12 @@ object Importer {
     /** cb(добавлено, ошибка|null). Зовётся на main-потоке. */
     fun importText(
         raw: String,
+        name: String? = null,
         onLoading: () -> Unit,
         onDone: (added: Int, error: String?) -> Unit,
     ) {
         val text = raw.trim()
+        val requestedName = name?.trim()?.takeIf { it.isNotEmpty() }
         if (text.isEmpty()) { onDone(0, "Буфер пуст"); return }
 
         // одиночная прокси-ссылка → single-профиль
@@ -43,7 +45,7 @@ object Importer {
             Thread({
                 try {
                     val (body, info) = fetch(text)
-                    val added = Store.addSubscriptionProfile(text, body, info)
+                    val added = Store.addSubscriptionProfile(text, body, info, name = requestedName)
                     main.post { onDone(added, null) }
                 } catch (e: Exception) {
                     main.post { onDone(0, "Не загрузить подписку: ${e.message}") }
@@ -54,7 +56,7 @@ object Importer {
 
         // сырое содержимое (base64/plain список ссылок) → профиль без URL
         try {
-            val n = Store.addSubscriptionProfile("", text, SubUserinfo.EMPTY, name = "Импорт")
+            val n = Store.addSubscriptionProfile("", text, SubUserinfo.EMPTY, name = requestedName ?: "Импорт")
             onDone(n, null)
         } catch (e: Exception) {
             onDone(0, "Не распознано (ссылка/подписка)")
