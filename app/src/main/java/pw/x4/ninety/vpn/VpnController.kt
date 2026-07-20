@@ -94,6 +94,9 @@ object VpnController {
             if (next.state == ConnState.Idle || next.state == ConnState.Stopping) {
                 ClashMonitor.stop()
             }
+            if (next.state == ConnState.Idle) {
+                QualityRuntime.markTunnelStopped()
+            }
             refreshTile()
         }
     }
