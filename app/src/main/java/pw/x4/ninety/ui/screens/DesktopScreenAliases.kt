@@ -8,3 +8,6 @@ fun ProfilesScreen(metrics: NinetyLayoutMetrics) = DesktopProfilesScreen(metrics
 
 @Composable
 fun NodesScreen(metrics: NinetyLayoutMetrics) = DesktopNodesScreen(metrics)
+
+@Composable
+fun SettingsScreen(metrics: NinetyLayoutMetrics) = DesktopSettingsScreen(metrics)
