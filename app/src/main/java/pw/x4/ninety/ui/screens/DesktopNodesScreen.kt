@@ -191,16 +191,20 @@ private fun sortDesktopNodes(nodes: List<Node>, delays: Map<String, Int>): List<
     nodes.withIndex().sortedWith(
         compareBy(
             { desktopPingGrade(delays[ConfigBuilder.tagOf(it.value)]) },
-            { delays[ConfigBuilder.tagOf(it.value)]?.takeIf(::desktopValidPing) ?: Int.MAX_VALUE },
+            {
+                delays[ConfigBuilder.tagOf(it.value)]
+                    ?.takeIf { delay -> desktopSortPingValid(delay) }
+                    ?: Int.MAX_VALUE
+            },
             { it.index },
         ),
     ).map { it.value }
 
 private fun desktopPingGrade(ms: Int?): Int = when {
-    !desktopValidPing(ms) -> 3
+    !desktopSortPingValid(ms) -> 3
     ms!! < 800 -> 0
     ms < 1500 -> 1
     else -> 2
 }
 
-private fun desktopValidPing(ms: Int?): Boolean = ms != null && ms in 1 until 65_000
+private fun desktopSortPingValid(ms: Int?): Boolean = ms != null && ms in 1 until 65_000
