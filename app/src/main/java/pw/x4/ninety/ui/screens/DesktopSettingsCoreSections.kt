@@ -112,7 +112,7 @@ internal fun DesktopRoutingSettings() {
         ) { Options.update(context) { current -> current.copy(ipv6Mode = it) } }
     }
     DesktopSettingsGap()
-    RoutingRulesEditor(options.customRules) { rules ->
+    DesktopRoutingRulesGate(options.customRules) { rules ->
         Options.update(context) { current -> current.copy(customRules = rules) }
     }
 }
