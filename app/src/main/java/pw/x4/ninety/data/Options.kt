@@ -32,6 +32,12 @@ object Options {
         val testIntervalSec: Int = 600,
         val logLevel: String = "info",           // trace|debug|info|warn|error
         val logDisabled: Boolean = false,
+        // — Quality Engine / устойчивый Auto —
+        val qualityEnabled: Boolean = true,
+        val qualityMinDwellSec: Int = 90,
+        val qualitySwitchMargin: Int = 8,
+        val qualityFailureThreshold: Int = 2,
+        val qualityCooldownSec: Int = 60,
         // — Маршрутизация —
         val region: String = "other",            // other|ru|cn|ir|tr|by
         val blockAds: Boolean = false,
@@ -85,6 +91,11 @@ object Options {
     private fun toJson(d: Data) = JSONObject().apply {
         put("testUrl", d.testUrl); put("testIntervalSec", d.testIntervalSec)
         put("logLevel", d.logLevel); put("logDisabled", d.logDisabled)
+        put("qualityEnabled", d.qualityEnabled)
+        put("qualityMinDwellSec", d.qualityMinDwellSec)
+        put("qualitySwitchMargin", d.qualitySwitchMargin)
+        put("qualityFailureThreshold", d.qualityFailureThreshold)
+        put("qualityCooldownSec", d.qualityCooldownSec)
         put("region", d.region); put("blockAds", d.blockAds)
         put("bypassLan", d.bypassLan); put("ipv6Mode", d.ipv6Mode)
         put("customRules", JSONArray().apply { d.customRules.forEach { put(ruleToJson(it)) } })
@@ -105,6 +116,11 @@ object Options {
             testIntervalSec = o.optInt("testIntervalSec", def.testIntervalSec),
             logLevel = o.optString("logLevel", def.logLevel),
             logDisabled = o.optBoolean("logDisabled", def.logDisabled),
+            qualityEnabled = o.optBoolean("qualityEnabled", def.qualityEnabled),
+            qualityMinDwellSec = o.optInt("qualityMinDwellSec", def.qualityMinDwellSec),
+            qualitySwitchMargin = o.optInt("qualitySwitchMargin", def.qualitySwitchMargin),
+            qualityFailureThreshold = o.optInt("qualityFailureThreshold", def.qualityFailureThreshold),
+            qualityCooldownSec = o.optInt("qualityCooldownSec", def.qualityCooldownSec),
             region = o.optString("region", def.region),
             blockAds = o.optBoolean("blockAds", def.blockAds),
             bypassLan = o.optBoolean("bypassLan", def.bypassLan),
