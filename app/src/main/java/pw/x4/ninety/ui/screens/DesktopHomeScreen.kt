@@ -1,12 +1,16 @@
 package pw.x4.ninety.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -134,37 +138,20 @@ private fun DesktopHeroStatus(state: ConnState, target: String?) {
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(7.dp))
-        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.foundation.layout.Box(
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
                 Modifier
-                    .height(6.dp)
-                    .padding(horizontal = 3.dp)
-                    .then(Modifier),
-            ) {
-                androidx.compose.foundation.layout.Box(
-                    Modifier
-                        .align(Alignment.Center)
-                        .height(6.dp)
-                        .fillMaxWidth()
-                        .padding(horizontal = 0.dp),
-                )
-            }
-            androidx.compose.foundation.layout.Box(
-                Modifier
-                    .padding(end = 9.dp)
-                    .height(6.dp)
-                    .fillMaxWidth(0.018f)
-                    .then(
-                        Modifier.background(
-                            when (state) {
-                                ConnState.Connected -> pack.accentBright
-                                ConnState.Connecting, ConnState.Stopping -> Ink.Warn
-                                ConnState.Idle -> Ink.TextMid
-                            },
-                            CircleShape,
-                        ),
+                    .size(6.dp)
+                    .background(
+                        when (state) {
+                            ConnState.Connected -> pack.accentBright
+                            ConnState.Connecting, ConnState.Stopping -> Ink.Warn
+                            ConnState.Idle -> Ink.TextMid
+                        },
+                        CircleShape,
                     ),
             )
+            Spacer(Modifier.size(9.dp))
             Text(kicker, style = KickerStyle, color = Ink.TextLo)
         }
     }
