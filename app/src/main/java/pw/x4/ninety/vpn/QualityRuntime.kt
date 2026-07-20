@@ -77,11 +77,14 @@ object QualityRuntime {
         }
 
         val profileId = Store.activeProfileId
+        val candidates = candidateNodeIds.filter(String::isNotBlank).distinct()
+        val nowMs = System.currentTimeMillis()
         val recommendation = synchronized(lock) {
-            profileId
-                ?.let(states::get)
-                ?.recommendedNodeId
-                ?.takeIf(candidateNodeIds::contains)
+            val state = profileId?.let(states::get) ?: return@synchronized null
+            val recommended = state.recommendedNodeId?.takeIf(candidates::contains)
+                ?: return@synchronized null
+            val rating = QualityEngine.rate(state, candidates, nowMs, policy(options))[recommended]
+            recommended.takeIf { rating?.available == true }
         }
         appliedRecommendationId = recommendation
         return recommendation?.let(ProxySelection::Node) ?: ProxySelection.Auto
@@ -167,14 +170,18 @@ object QualityRuntime {
 
     private fun publishCurrent() {
         if (!initialized) return
-        val now = System.currentTimeMillis()
+        val nowMs = System.currentTimeMillis()
         val profileId = Store.activeProfileId
         val state = synchronized(lock) { profileId?.let(states::get) }
         val candidates = Store.supportedActiveNodes().map { it.id }
+        val ratings = state?.let { QualityEngine.rate(it, candidates, nowMs, policy(Options.data)) }.orEmpty()
+        val recommendation = state?.recommendedNodeId
+            ?.takeIf(candidates::contains)
+            ?.takeIf { ratings[it]?.available == true }
         snapshot = Snapshot(
             profileId = profileId,
-            recommendedNodeId = state?.recommendedNodeId?.takeIf(candidates::contains),
-            ratings = state?.let { QualityEngine.rate(it, candidates, now, policy(Options.data)) }.orEmpty(),
+            recommendedNodeId = recommendation,
+            ratings = ratings,
             updatedAtMs = state?.updatedAtMs ?: 0,
         )
     }
