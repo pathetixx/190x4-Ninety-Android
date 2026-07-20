@@ -112,8 +112,11 @@ class Prefs private constructor(
         PersistenceRuntime.persistPreferences(next)
     }
 
+    @SuppressLint("ApplySharedPref")
     private fun clearLegacyJournal() {
-        sp.edit().clear().apply()
+        check(sp.edit().clear().commit()) {
+            "failed to clear plaintext SharedPreferences journal"
+        }
     }
 
     private fun SharedPreferences.Editor.putNullableString(key: String, value: String?) {
