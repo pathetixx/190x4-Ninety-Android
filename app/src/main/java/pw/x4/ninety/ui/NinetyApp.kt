@@ -28,10 +28,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,17 +39,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import pw.x4.ninety.BuildConfig
-import pw.x4.ninety.R
 import pw.x4.ninety.data.Fmt
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.data.Updater
 import pw.x4.ninety.ui.components.DesktopActiveNavShape
 import pw.x4.ninety.ui.components.DesktopBackdrop
+import pw.x4.ninety.ui.components.DesktopBrandMark
 import pw.x4.ninety.ui.components.DesktopRowShape
 import pw.x4.ninety.ui.components.UpdateModal
 import pw.x4.ninety.ui.components.desktopCard
@@ -189,41 +190,27 @@ private fun DesktopBrand(expanded: Boolean) {
         Modifier
             .fillMaxWidth()
             .height(if (expanded) 126.dp else 88.dp)
-            .padding(horizontal = if (expanded) 20.dp else 12.dp),
+            .padding(horizontal = if (expanded) 20.dp else 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
     ) {
-        Box(
-            Modifier
-                .size(if (expanded) 76.dp else 48.dp)
-                .clip(RoundedCornerShape(if (expanded) 18.dp else 14.dp))
-                .background(NinetyState.pack.accentSoft)
-                .border(1.dp, NinetyState.pack.material.border, RoundedCornerShape(if (expanded) 18.dp else 14.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_launcher_mono),
-                contentDescription = null,
-                tint = NinetyState.pack.accentBright,
-                modifier = Modifier.size(if (expanded) 66.dp else 42.dp),
-            )
-            Box(
-                Modifier
-                    .size(if (expanded) 10.dp else 7.dp)
-                    .background(NinetyState.pack.material.secondary, CircleShape),
-            )
-        }
+        DesktopBrandMark(Modifier.size(if (expanded) 94.dp else 54.dp))
         if (expanded) {
             Spacer(Modifier.width(15.dp))
             Column {
                 Text(
                     "NINETY",
-                    style = NinetyTypography.displayMedium,
+                    style = NinetyTypography.headlineMedium.copy(
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 30.sp,
+                        lineHeight = 30.sp,
+                        letterSpacing = 3.75.sp,
+                    ),
                     color = Ink.TextHi,
                     maxLines = 1,
                 )
-                Spacer(Modifier.height(5.dp))
-                Text("190X4 · ANDROID", style = KickerStyle, color = Ink.TextFaint)
+                Spacer(Modifier.height(9.dp))
+                Text("190X4 · VPN", style = KickerStyle, color = Ink.TextFaint, maxLines = 1)
             }
         }
     }
