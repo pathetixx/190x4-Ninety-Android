@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import pw.x4.ninety.data.Importer
 import pw.x4.ninety.data.Store
+import pw.x4.ninety.ui.components.DesktopConfirmDialog
 import pw.x4.ninety.ui.components.PillButton
 import pw.x4.ninety.ui.components.desktopCard
 import pw.x4.ninety.ui.icons.NinetyIcons
@@ -49,6 +50,7 @@ fun DesktopProfilesScreen(metrics: NinetyLayoutMetrics) {
     val profiles = Store.profiles
     var busy by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
 
     NinetyPage(metrics) {
         Column(Modifier.fillMaxSize().padding(top = if (metrics.isCompact) 16.dp else 24.dp)) {
@@ -97,7 +99,7 @@ fun DesktopProfilesScreen(metrics: NinetyLayoutMetrics) {
                             active = profile.id == Store.activeProfileId,
                             compact = metrics.isCompact,
                             onSelect = { selectDesktopProfile(context, profile.id) },
-                            onDelete = { deleteDesktopProfile(context, profile.id) },
+                            onDelete = { pendingDelete = profile.id },
                         )
                     }
                 }
@@ -106,6 +108,19 @@ fun DesktopProfilesScreen(metrics: NinetyLayoutMetrics) {
     }
 
     if (showAdd) DesktopAddProfileDialog(context, onDismiss = { showAdd = false })
+
+    pendingDelete?.let { profileId ->
+        val profileName = profiles.firstOrNull { it.id == profileId }?.name ?: "Профиль"
+        DesktopConfirmDialog(
+            kicker = "Profile · Delete",
+            title = "Удалить профиль?",
+            message = "Профиль «$profileName» и все связанные ноды будут удалены без возможности восстановления.",
+            confirmLabel = "Удалить",
+            destructive = true,
+            onDismiss = { pendingDelete = null },
+            onConfirm = { deleteDesktopProfile(context, profileId) },
+        )
+    }
 }
 
 @Composable
