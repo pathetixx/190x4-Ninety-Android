@@ -88,7 +88,7 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Room mapping and normalization tests
+      - name: Room mapping, normalization and graph delta tests
         shell: bash
         run: |
           set -o pipefail
@@ -109,7 +109,7 @@ jobs:
     name: android verification
     needs: [core, data]
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -188,7 +188,7 @@ jobs:
           set -o pipefail
           gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee ci-assemble-debug.log
 
-      - name: Android lint
+      - name: Android debug lint
         id: lint_debug
         if: always()
         continue-on-error: true
@@ -196,6 +196,29 @@ jobs:
         run: |
           set -o pipefail
           gradle :app:lintDebug --no-daemon --stacktrace 2>&1 | tee ci-lint-debug.log
+
+      - name: Verify optimized release and release lint
+        id: release_verify
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleRelease :app:lintRelease --no-daemon --stacktrace 2>&1 | tee ci-release-verify.log
+
+      - name: Enable KVM for managed device
+        if: always() && steps.assemble_debug.outcome == 'success'
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: API 35 managed device tests
+        id: instrumented
+        if: always() && steps.assemble_debug.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:pixel2Api35DebugAndroidTest -Pninety.testEmulator=true --no-daemon --stacktrace 2>&1 | tee ci-instrumented.log
 
       - name: Upload PR Android diagnostics
         if: always() && github.event_name == 'pull_request'
@@ -207,9 +230,15 @@ jobs:
             ci-app-tests.log
             ci-assemble-debug.log
             ci-lint-debug.log
+            ci-release-verify.log
+            ci-instrumented.log
             app/build/reports/tests/**
             app/build/reports/lint-results-debug.*
             app/build/reports/lint-results-debug/**
+            app/build/reports/lint-results-release.*
+            app/build/reports/lint-results-release/**
+            app/build/reports/androidTests/managedDevice/**
+            app/build/outputs/androidTest-results/managedDevice/**
 
       - name: Fail when Android verification failed
         if: always()
@@ -217,11 +246,19 @@ jobs:
           APP_TESTS: ${{ steps.app_tests.outcome }}
           ASSEMBLE_DEBUG: ${{ steps.assemble_debug.outcome }}
           LINT_DEBUG: ${{ steps.lint_debug.outcome }}
+          RELEASE_VERIFY: ${{ steps.release_verify.outcome }}
+          INSTRUMENTED: ${{ steps.instrumented.outcome }}
         run: |
-          echo "app tests:      $APP_TESTS"
-          echo "assemble debug: $ASSEMBLE_DEBUG"
-          echo "lint debug:     $LINT_DEBUG"
-          if [ "$APP_TESTS" != "success" ] || [ "$ASSEMBLE_DEBUG" != "success" ] || [ "$LINT_DEBUG" != "success" ]; then
+          echo "app tests:        $APP_TESTS"
+          echo "assemble debug:   $ASSEMBLE_DEBUG"
+          echo "lint debug:       $LINT_DEBUG"
+          echo "release R8/lint:  $RELEASE_VERIFY"
+          echo "instrumented:     $INSTRUMENTED"
+          if [ "$APP_TESTS" != "success" ] || \
+             [ "$ASSEMBLE_DEBUG" != "success" ] || \
+             [ "$LINT_DEBUG" != "success" ] || \
+             [ "$RELEASE_VERIFY" != "success" ] || \
+             [ "$INSTRUMENTED" != "success" ]; then
             exit 1
           fi
 
@@ -236,13 +273,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/ninety-release.jks"
 
-      - name: Assemble and lint release APKs
+      - name: Assemble signed release APKs
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         env:
           NINETY_KEYSTORE: ${{ runner.temp }}/ninety-release.jks
           NINETY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           NINETY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: gradle :app:assembleRelease :app:lintRelease --no-daemon --stacktrace
+        run: gradle :app:assembleRelease --no-daemon --stacktrace --rerun-tasks
 
       - name: Stage release APKs and checksums
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
