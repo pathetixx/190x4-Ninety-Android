@@ -1,6 +1,9 @@
 package pw.x4.ninety.vpn
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import pw.x4.ninety.WarpActivity
 import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Store
 
@@ -45,12 +48,18 @@ object TunnelModes {
     }
 
     fun select(context: Context, mode: TunnelMode) {
+        val previous = current()
         Options.update(context) { current ->
             when (mode) {
                 TunnelMode.PROXY -> current.copy(warpEnabled = false)
                 TunnelMode.WARP_DIRECT -> current.copy(warpEnabled = true, warpMode = "direct")
                 TunnelMode.WARP_CHAIN -> current.copy(warpEnabled = true, warpMode = "chain")
             }
+        }
+        if (mode.usesWarp && (!WarpRuntime.snapshot.registered || previous == mode)) {
+            val intent = Intent(context, WarpActivity::class.java)
+            if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
     }
 
@@ -64,13 +73,13 @@ object TunnelModes {
         TunnelMode.WARP_DIRECT -> if (WarpRuntime.snapshot.registered) {
             TunnelStartCheck(true)
         } else {
-            TunnelStartCheck(false, "Сначала зарегистрируйте WARP в Настройки → Маршрутизация")
+            TunnelStartCheck(false, "Нажмите режим WARP и завершите регистрацию")
         }
 
         TunnelMode.WARP_CHAIN -> when {
             !WarpRuntime.snapshot.registered -> TunnelStartCheck(
                 false,
-                "Сначала зарегистрируйте WARP в Настройки → Маршрутизация",
+                "Нажмите режим «Цепочка» и завершите регистрацию WARP",
             )
             !Store.hasRunnableSelection() -> TunnelStartCheck(
                 false,
