@@ -225,6 +225,9 @@ object Store {
 
     @Synchronized
     fun refreshProfileNodes(id: String, content: String, info: SubUserinfo): Int {
+        val profile = requireNotNull(profiles.firstOrNull { it.id == id }) {
+            "Профиль был удалён во время обновления"
+        }
         val parsed = LinkParser.parseSubscription(content)
         require(parsed.isNotEmpty()) { "Подписка пуста или не распознана" }
         nodes.removeAll { it.subId == id }
@@ -232,16 +235,14 @@ object Store {
             .map { it.copy(fromSub = true, subId = id) }
             .distinctBy(Node::id)
         nodes.addAll(tagged)
-        profiles.firstOrNull { it.id == id }?.let { profile ->
-            upsertProfile(
-                profile.copy(
-                    used = info.used,
-                    total = info.total,
-                    expire = info.expire,
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
-        }
+        upsertProfile(
+            profile.copy(
+                used = info.used,
+                total = info.total,
+                expire = info.expire,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
 
         if (activeProfileId == id) {
             val keepCurrent = when (val current = selection) {
