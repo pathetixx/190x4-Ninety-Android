@@ -8,10 +8,9 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Room + DataStore gateway.
  *
- * Migration is deliberately two-phase: write and read back the Room graph, write and read back
- * DataStore, then set the marker. Legacy files remain available during the transition. Since the
- * compatibility facades write legacy state first, a verified mismatch indicates an interrupted
- * modern-store commit and the legacy snapshot is the latest complete value.
+ * Migration is two-phase: write/read-back the Room graph and DataStore snapshot, then persist the
+ * marker. Legacy input is recovery-only after the marker; hot-path graph writes use a calculated
+ * delta so unchanged rows are never deleted or re-encrypted.
  */
 class NinetyStorage private constructor(
     private val database: NinetyDatabase,
@@ -134,14 +133,28 @@ class NinetyStorage private constructor(
         profiles: List<PersistedProfile>,
     ) {
         requireValidGraph(nodes, profiles)
+        val current = readGraph()
+        val delta = storageGraphDelta(
+            currentNodes = current.nodes,
+            currentProfiles = current.profiles,
+            expectedNodes = nodes,
+            expectedProfiles = profiles,
+        )
+        if (delta.isEmpty) return
+
         database.withTransaction {
-            database.nodeDao().deleteAll()
-            database.profileDao().deleteAll()
-            if (profiles.isNotEmpty()) {
-                database.profileDao().insertAll(profiles.map { mapper.toEntity(it) })
+            // Delete children first. Profile deletion then safely cascades any unexpected leftovers.
+            if (delta.nodeIdsToDelete.isNotEmpty()) {
+                database.nodeDao().deleteByIds(delta.nodeIdsToDelete)
             }
-            if (nodes.isNotEmpty()) {
-                database.nodeDao().insertAll(nodes.map { mapper.toEntity(it) })
+            if (delta.profileIdsToDelete.isNotEmpty()) {
+                database.profileDao().deleteByIds(delta.profileIdsToDelete)
+            }
+            if (delta.profilesToUpsert.isNotEmpty()) {
+                database.profileDao().insertAll(delta.profilesToUpsert.map(mapper::toEntity))
+            }
+            if (delta.nodesToUpsert.isNotEmpty()) {
+                database.nodeDao().insertAll(delta.nodesToUpsert.map(mapper::toEntity))
             }
         }
     }
