@@ -57,6 +57,22 @@ class StorageSnapshotTest {
     }
 
     @Test
+    fun `quality history survives graph normalization unchanged`() {
+        val quality = """{"version":1,"profiles":[]}"""
+        val snapshot = StorageSnapshot(
+            profiles = listOf(PersistedProfile("p", "P", "sub")),
+            nodes = listOf(node("n", "p")),
+            preferences = PreferenceSnapshot(
+                activeProfileId = "p",
+                activeNodeId = ProxySelection.AUTO_ID,
+                qualityJson = quality,
+            ),
+        ).normalized()
+
+        assertEquals(quality, snapshot.preferences.qualityJson)
+    }
+
+    @Test
     fun `rollback journal accepts only the exact graph`() {
         val nodes = "nodes-v1"
         val profiles = "profiles-v1"
