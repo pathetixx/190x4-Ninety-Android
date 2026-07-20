@@ -166,12 +166,16 @@ object ClashMonitor : CommandClientHandler {
         main.post {
             val nodes = Store.supportedActiveNodes()
             val idByTag = nodes.associate { ConfigBuilder.tagOf(it) to it.id }
-            val delaysByNodeId = idByTag.mapValues { (tag, _) -> delays[tag] }
-            QualityRuntime.record(
-                candidateNodeIds = nodes.map { it.id },
-                delaysByNodeId = delaysByNodeId,
-                rawAutoNodeId = autoNow?.let(idByTag::get),
-            )
+            // A late group update from the previous config can arrive after a profile/reload switch.
+            // Only a complete batch for the current candidate set is allowed to affect history.
+            val completeCurrentBatch = idByTag.isNotEmpty() && idByTag.keys.all(delays::containsKey)
+            if (completeCurrentBatch) {
+                QualityRuntime.record(
+                    candidateNodeIds = nodes.map { it.id },
+                    delaysByNodeId = idByTag.mapValues { (tag, _) -> delays[tag] },
+                    rawAutoNodeId = autoNow?.let(idByTag::get),
+                )
+            }
             snapshot = snapshot.copy(
                 delays = delays,
                 selectorNow = selectorNow,
