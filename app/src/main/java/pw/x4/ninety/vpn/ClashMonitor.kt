@@ -15,38 +15,24 @@ import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
+import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Store
 
-/**
- * Read-only мост к работающему ядру (порт desktop clash-api на Android без REST):
- * CommandClient подписывается на CommandGroup и в реальном времени отдаёт группы
- * outbound'ов. Из них берём:
- *   • пинги нод — URLTestDelay элементов группы urltest "auto";
- *   • эффективный узел авто — .Selected этой же группы (как auto.now на desktop);
- *   • текущий выбор селектора — .Selected группы "proxy".
- * Клиент коннектится к in-process CommandServer (unix-сокет на basePath, который
- * уже выставлен Libbox.setup в сервисе). [urlTestAll] перетестирует весь профиль —
- * это и есть FAB-молния в Нодах.
- */
 object ClashMonitor : CommandClientHandler {
-
     data class Snapshot(
-        val delays: Map<String, Int> = emptyMap(), // clash-tag -> ms (0 / >=65000 = недоступна)
-        val selectorNow: String? = null,            // "auto" | nodeTag — что выбрано в селекторе
-        val autoNow: String? = null,                // эффективная нода urltest-группы
+        val delays: Map<String, Int> = emptyMap(),
+        val selectorNow: String? = null,
+        val autoNow: String? = null,
         val connected: Boolean = false,
         val testing: Boolean = false,
-        val up: Long = 0,                           // исходящий, байт/с (CommandStatus)
-        val down: Long = 0,                         // входящий, байт/с
+        val up: Long = 0,
+        val down: Long = 0,
     ) {
-        /** Тег ноды, через которую реально идёт трафик. */
-        fun effectiveTag(): String? = when (val s = selectorNow) {
-            null -> autoNow
-            "auto" -> autoNow
-            else -> s
+        fun effectiveTag(): String? = when (val selected = selectorNow) {
+            null, "auto" -> autoNow
+            else -> selected
         }
 
-        /** Задержка эффективной ноды (для ping-пилюли hero). */
         fun effectiveDelay(): Int? = effectiveTag()?.let { delays[it] }
     }
 
@@ -57,7 +43,6 @@ object ClashMonitor : CommandClientHandler {
     private var client: CommandClient? = null
     @Volatile private var running = false
 
-    /** Поднять монитор (зовётся из VpnController при Connected). Идемпотентно. */
     fun start() {
         if (running) return
         running = true
@@ -68,56 +53,54 @@ object ClashMonitor : CommandClientHandler {
         Thread({
             if (!running) return@Thread
             try {
-                val opts = CommandClientOptions()
-                opts.addCommand(Libbox.CommandGroup)
-                opts.addCommand(Libbox.CommandStatus) // трафик up/down + память
-                opts.statusInterval = 1_000_000_000L // 1s — частота статус-пушей
-                val c = CommandClient(this, opts) // gomobile: NewCommandClient → конструктор
-                client = c
-                c.connect() // дозванивается и стартует read-loop в горутине, возвращается сразу
-                // Кикаем urltest сразу + повтор через 1.5с. Первый кик может уйти ДО того,
-                // как ядро успело подписать group-стрим (тогда замеры начнутся только по
-                // interval=600с → «авто долго собирает»). Повтор гарантирует старт замеров.
-                kickAuto(c)
+                val options = CommandClientOptions()
+                options.addCommand(Libbox.CommandGroup)
+                options.addCommand(Libbox.CommandStatus)
+                options.statusInterval = 1_000_000_000L
+                val next = CommandClient(this, options)
+                client = next
+                next.connect()
+                kickAuto(next)
                 try { Thread.sleep(1500) } catch (_: Throwable) {}
-                if (running) kickAuto(c)
+                if (running) kickAuto(next)
             } catch (_: Throwable) {
-                // дозвониться не вышло — повторим, пока активны (ядро могло ещё не поднять сокет)
-                if (running) { try { Thread.sleep(1000) } catch (_: Throwable) {}; if (running) spawnConnect() }
+                if (running) {
+                    try { Thread.sleep(1000) } catch (_: Throwable) {}
+                    if (running) spawnConnect()
+                }
             }
         }, "ninety-clash").start()
     }
 
-    private fun kickAuto(c: CommandClient) { try { c.urlTest("auto") } catch (_: Throwable) {} }
+    private fun kickAuto(commandClient: CommandClient) {
+        try { commandClient.urlTest("auto") } catch (_: Throwable) {}
+    }
 
-    /** Погасить монитор (зовётся из VpnController при Idle). */
     fun stop() {
         if (!running) return
         running = false
-        val c = client
+        val current = client
         client = null
-        Thread({ try { c?.disconnect() } catch (_: Throwable) {} }, "ninety-clash-stop").start()
+        Thread({ try { current?.disconnect() } catch (_: Throwable) {} }, "ninety-clash-stop").start()
         QualityRuntime.markTunnelStopped()
         main.post { snapshot = Snapshot() }
     }
 
-    /** Перетест всех нод профиля (FAB-молния). Триггерит urltest-группу "auto". */
     fun urlTestAll() {
-        val c = client ?: return
+        val current = client ?: return
         main.post { snapshot = snapshot.copy(testing = true) }
         Thread({
-            try { c.urlTest("auto") } catch (_: Throwable) {}
-            // «testing» сбросит следующий writeGroups; страховка — таймаут.
+            try { current.urlTest("auto") } catch (_: Throwable) {}
             main.postDelayed({ snapshot = snapshot.copy(testing = false) }, 6000)
         }, "ninety-urltest").start()
     }
 
-    // ── CommandClientHandler (сигнатуры — как в эталонном SFA) ──
-    override fun connected() { main.post { snapshot = snapshot.copy(connected = true) } }
+    override fun connected() {
+        main.post { snapshot = snapshot.copy(connected = true) }
+    }
+
     override fun disconnected(message: String?) {
         main.post { snapshot = snapshot.copy(connected = false) }
-        // Стрим групп умирает при reload ядра (смена ноды/профиля) — переподключаемся,
-        // иначе пинги застывают после первого переключения.
         if (running) {
             val old = client
             client = null
@@ -128,15 +111,17 @@ object ClashMonitor : CommandClientHandler {
             }, "ninety-clash-reconn").start()
         }
     }
+
     override fun setDefaultLogLevel(level: Int) {}
     override fun clearLogs() {}
     override fun writeLogs(messageList: LogIterator?) {}
+
     override fun writeStatus(message: StatusMessage) {
-        // CommandStatus раз в statusInterval — берём мгновенную скорость up/down (байт/с).
         val up = try { message.uplink } catch (_: Throwable) { 0L }
         val down = try { message.downlink } catch (_: Throwable) { 0L }
         main.post { snapshot = snapshot.copy(up = up, down = down, connected = true) }
     }
+
     override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
     override fun updateClashMode(newMode: String) {}
     override fun writeConnectionEvents(events: ConnectionEvents?) {}
@@ -149,12 +134,12 @@ object ClashMonitor : CommandClientHandler {
         try {
             val groups = ArrayList<OutboundGroup>()
             while (message.hasNext()) groups.add(message.next())
-            for (g in groups) {
-                when (g.tag) {
-                    "proxy" -> selectorNow = g.selected
+            groups.forEach { group ->
+                when (group.tag) {
+                    "proxy" -> selectorNow = group.selected
                     "auto" -> {
-                        autoNow = g.selected
-                        val items = g.items
+                        autoNow = group.selected
+                        val items = group.items
                         while (items.hasNext()) {
                             val item = items.next()
                             delays[item.tag] = item.urlTestDelay
@@ -162,14 +147,16 @@ object ClashMonitor : CommandClientHandler {
                     }
                 }
             }
-        } catch (_: Throwable) { return }
+        } catch (_: Throwable) {
+            return
+        }
+
         main.post {
             val nodes = Store.supportedActiveNodes()
             val idByTag = nodes.associate { ConfigBuilder.tagOf(it) to it.id }
-            // A late group update from the previous config can arrive after a profile/reload switch.
-            // Only a complete batch for the current candidate set is allowed to affect history.
             val completeCurrentBatch = idByTag.isNotEmpty() && idByTag.keys.all(delays::containsKey)
-            if (completeCurrentBatch) {
+            val warpDirect = Options.data.warpEnabled && Options.data.warpMode == "direct"
+            if (completeCurrentBatch && !warpDirect) {
                 QualityRuntime.record(
                     candidateNodeIds = nodes.map { it.id },
                     delaysByNodeId = idByTag.mapValues { (tag, _) -> delays[tag] },
