@@ -37,6 +37,7 @@ internal class PreferenceStore(
             skippedVersion = values[SKIPPED_VERSION],
             lastSeenVersionCode = values[LAST_SEEN_VERSION] ?: 0,
             optionsJson = values[OPTIONS_JSON],
+            qualityJson = values[QUALITY_JSON],
         )
     }
 
@@ -63,6 +64,7 @@ internal class PreferenceStore(
         setNullable(SKIPPED_VERSION, snapshot.skippedVersion)
         this[LAST_SEEN_VERSION] = snapshot.lastSeenVersionCode
         setNullable(OPTIONS_JSON, snapshot.optionsJson)
+        setNullable(QUALITY_JSON, snapshot.qualityJson)
     }
 
     private fun <T : Any> MutablePreferences.setNullable(
@@ -84,5 +86,6 @@ internal class PreferenceStore(
         val SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val LAST_SEEN_VERSION = intPreferencesKey("last_seen_version_code")
         val OPTIONS_JSON = stringPreferencesKey("options_json")
+        val QUALITY_JSON = stringPreferencesKey("quality_json")
     }
 }
