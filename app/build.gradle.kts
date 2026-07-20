@@ -11,8 +11,8 @@ android {
         applicationId = "pw.x4.ninety"
         minSdk = 26
         targetSdk = 35
-        versionCode = 129
-        versionName = "0.1.29"
+        versionCode = 200
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     splits { abi { isEnable = true; reset(); include("arm64-v8a", "armeabi-v7a"); isUniversalApk = false } }
