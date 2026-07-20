@@ -3,19 +3,19 @@ package pw.x4.ninety.data
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
-import pw.x4.ninety.data.persistence.PreferenceSnapshot
 import java.util.concurrent.atomic.AtomicReference
+import pw.x4.ninety.data.persistence.PreferenceSnapshot
 
 /**
- * Synchronous compatibility facade for existing UI/service callers.
+ * Synchronous in-memory compatibility facade over Preferences DataStore.
  *
- * Reads come from an in-memory DataStore snapshot. Writes are deliberately dual: the old
- * SharedPreferences file is committed first as a rollback journal, then DataStore is written and
- * read back by [PersistenceRuntime].
+ * SharedPreferences is used only while modern storage migration is unverified. Once Room/DataStore
+ * has been verified, the old plaintext journal is cleared and all writes are queued asynchronously.
  */
 class Prefs private constructor(
     context: Context,
     initial: PreferenceSnapshot,
+    private val legacyJournalEnabled: Boolean,
 ) {
     private val sp: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
@@ -102,12 +102,18 @@ class Prefs private constructor(
         val next = synchronized(this) {
             transform(state.get()).also {
                 state.set(it)
-                check(sp.edit().apply(legacyWrite).commit()) {
-                    "failed to commit SharedPreferences rollback journal"
+                if (legacyJournalEnabled) {
+                    check(sp.edit().apply(legacyWrite).commit()) {
+                        "failed to commit SharedPreferences rollback journal"
+                    }
                 }
             }
         }
         PersistenceRuntime.persistPreferences(next)
+    }
+
+    private fun clearLegacyJournal() {
+        sp.edit().clear().apply()
     }
 
     private fun SharedPreferences.Editor.putNullableString(key: String, value: String?) {
@@ -130,14 +136,23 @@ class Prefs private constructor(
         @Volatile
         private var instance: Prefs? = null
 
-        fun initialize(context: Context, snapshot: PreferenceSnapshot): Prefs = synchronized(this) {
-            Prefs(context.applicationContext, snapshot).also { instance = it }
+        fun initialize(
+            context: Context,
+            snapshot: PreferenceSnapshot,
+            legacyJournalEnabled: Boolean,
+        ): Prefs = synchronized(this) {
+            Prefs(context.applicationContext, snapshot, legacyJournalEnabled).also {
+                instance = it
+                if (!legacyJournalEnabled) it.clearLegacyJournal()
+            }
         }
 
         fun get(context: Context): Prefs = instance ?: synchronized(this) {
-            instance ?: Prefs(context.applicationContext, readLegacyFallback(context)).also {
-                instance = it
-            }
+            instance ?: Prefs(
+                context.applicationContext,
+                readLegacyFallback(context),
+                legacyJournalEnabled = true,
+            ).also { instance = it }
         }
 
         private fun readLegacyFallback(context: Context): PreferenceSnapshot {
