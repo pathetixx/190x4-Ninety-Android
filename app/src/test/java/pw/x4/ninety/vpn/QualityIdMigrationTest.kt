@@ -43,7 +43,7 @@ class QualityIdMigrationTest {
         assertEquals(setOf("new"), migrated.nodes.keys)
         assertEquals(listOf(1L, 2L, 3L), migrated.nodes.getValue("new").samples.map { it.measuredAtMs })
         assertEquals(3, migrated.nodes.getValue("new").consecutiveFailures)
-        assertEquals(20, migrated.nodes.getValue("new").cooldownUntilMs)
+        assertEquals(20L, migrated.nodes.getValue("new").cooldownUntilMs)
     }
 
     @Test
