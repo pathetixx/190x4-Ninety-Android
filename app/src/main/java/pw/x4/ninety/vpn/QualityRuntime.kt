@@ -59,7 +59,7 @@ object QualityRuntime {
             this.context = context.applicationContext
             prefs = Prefs.get(this.context)
 
-            val aliasesByProfile = Store.profiles.associate { profile ->
+            val aliasesByProfile = Store.profilesSnapshot().associate { profile ->
                 profile.id to Store.nodesOf(profile.id).associate { node ->
                     legacyNodeId(node) to node.id
                 }
@@ -90,7 +90,7 @@ object QualityRuntime {
             return requested
         }
 
-        val profileId = Store.activeProfileId
+        val profileId = Store.activeProfileIdValue()
         val candidates = candidateNodeIds.filter(String::isNotBlank).distinct()
         val nowMs = System.currentTimeMillis()
         val recommendation = synchronized(lock) {
@@ -114,7 +114,7 @@ object QualityRuntime {
         if (!initialized || !Options.data.qualityEnabled) return
         if (nowMs - lastRecordedAtMs < MIN_BATCH_INTERVAL_MS) return
 
-        val profileId = Store.activeProfileId ?: return
+        val profileId = Store.activeProfileIdValue() ?: return
         val candidates = candidateNodeIds.filter(String::isNotBlank).distinct()
         if (candidates.isEmpty()) return
         val knownNodeIds = Store.nodesOf(profileId).map { it.id }
@@ -152,7 +152,7 @@ object QualityRuntime {
 
     fun rating(nodeId: String): NodeQualityRating? = snapshot.ratings[nodeId]
 
-    fun recommendedNodeId(profileId: String? = Store.activeProfileId): String? = synchronized(lock) {
+    fun recommendedNodeId(profileId: String? = Store.activeProfileIdValue()): String? = synchronized(lock) {
         profileId?.let(states::get)?.recommendedNodeId
     }
 
@@ -187,7 +187,7 @@ object QualityRuntime {
     private fun publishCurrent() {
         if (!initialized) return
         val nowMs = System.currentTimeMillis()
-        val profileId = Store.activeProfileId
+        val profileId = Store.activeProfileIdValue()
         val state = synchronized(lock) { profileId?.let(states::get) }
         val candidates = Store.supportedActiveNodes().map { it.id }
         val ratings = state?.let { QualityEngine.rate(it, candidates, nowMs, policy(Options.data)) }.orEmpty()
@@ -213,7 +213,7 @@ object QualityRuntime {
     }
 
     private fun pruneLocked() {
-        val profiles = Store.profiles.associate { profile ->
+        val profiles = Store.profilesSnapshot().associate { profile ->
             profile.id to Store.nodesOf(profile.id).map { it.id }
         }
         states.keys.retainAll(profiles.keys)
