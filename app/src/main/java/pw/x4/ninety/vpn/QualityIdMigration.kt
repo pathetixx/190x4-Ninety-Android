@@ -34,7 +34,10 @@ private fun NodeQualityHistory.merge(other: NodeQualityHistory): NodeQualityHist
     NodeQualityHistory(
         samples = (samples + other.samples)
             .distinctBy { it.measuredAtMs to it.delayMs }
-            .sortedBy { it.measuredAtMs },
+            .sortedBy { it.measuredAtMs }
+            .takeLast(MAX_HISTORY_SIZE),
         consecutiveFailures = maxOf(consecutiveFailures, other.consecutiveFailures),
         cooldownUntilMs = maxOf(cooldownUntilMs, other.cooldownUntilMs),
     )
+
+private const val MAX_HISTORY_SIZE = 12
