@@ -10,16 +10,12 @@ import pw.x4.ninety.core.config.SingBoxOptions
 import pw.x4.ninety.core.config.TunStack
 import pw.x4.ninety.core.model.ProxyNode
 import pw.x4.ninety.core.model.ProxyProtocol
+import pw.x4.ninety.core.model.ProxySelection
 import pw.x4.ninety.core.model.RoutingRuleType
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Options
 
-/**
- * Android compatibility facade around the pure config builders.
- *
- * VpnService and UI keep their stable API while all sing-box JSON rules live in deterministic JVM
- * modules. Package-name routing is emitted only where Android can resolve connection ownership.
- */
+/** Android compatibility facade around the deterministic core config builder. */
 object ConfigBuilder {
     fun build(
         nodes: List<Node>,
@@ -28,13 +24,15 @@ object ConfigBuilder {
         opts: Options.Data = Options.data,
     ): String {
         val configNodes = nodes.map { it.toConfigNode() }
+        val mode = TunnelModes.current(opts)
+        val selection = if (mode.requiresProxySelection) {
+            ProxySelection.fromPersisted(selectedId)
+        } else {
+            null
+        }
         return NinetyConfigBuilder.build(
             nodes = configNodes,
-            selection = QualityRuntime.selectionForConfig(
-                persistedSelection = selectedId,
-                candidateNodeIds = configNodes.map(ConfigNode::id),
-                options = opts,
-            ),
+            selection = selection,
             logPath = logPath,
             options = opts.toCoreOptions(),
         )
