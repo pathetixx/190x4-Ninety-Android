@@ -20,7 +20,11 @@ class NinetyApplication : Application() {
         Diag.snapshotLogcat(this)
 
         val storage = PersistenceRuntime.initialize(this)
-        Prefs.initialize(this, storage.snapshot.preferences)
+        Prefs.initialize(
+            context = this,
+            snapshot = storage.snapshot.preferences,
+            legacyJournalEnabled = !storage.migrationVerified,
+        )
         Log.i(
             "NinetyStorage",
             "source=${storage.source}, verified=${storage.migrationVerified}, " +
@@ -28,7 +32,7 @@ class NinetyApplication : Application() {
         )
 
         NinetyState.pack = packById(Prefs.get(this).themePack)
-        Store.init(this, storage.snapshot)
+        Store.init(this, storage.snapshot, storage.migrationVerified)
 
         val prefs = Prefs.get(this)
         if (BuildConfig.VERSION_CODE > prefs.lastSeenVersionCode) {
