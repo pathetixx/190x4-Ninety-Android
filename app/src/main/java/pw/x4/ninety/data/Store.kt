@@ -84,7 +84,6 @@ object Store {
         }
     }
 
-    // Legacy compatibility field; UI no longer uses a global subscription URL.
     var subscriptionUrl: String?
         get() = prefs.subscriptionUrl
         set(value) { prefs.subscriptionUrl = value }
@@ -152,7 +151,10 @@ object Store {
             legacyRawId.takeIf { candidate -> profiles.any { it.id == candidate } }
                 ?: StableId.rawProfile(content)
         } else {
-            Profile.subId(url)
+            val normalizedUrl = normalizeSubscriptionUrl(url)
+            profiles.firstOrNull { profile ->
+                profile.isSub && normalizeSubscriptionUrl(profile.url) == normalizedUrl
+            }?.id ?: Profile.subId(normalizedUrl)
         }
         nodes.removeAll { it.subId == id }
         val tagged = parsed
@@ -164,7 +166,7 @@ object Store {
                 id = id,
                 name = name ?: hostOf(url) ?: "Подписка",
                 type = "sub",
-                url = url,
+                url = url.trim(),
                 used = info.used,
                 total = info.total,
                 expire = info.expire,
@@ -328,6 +330,8 @@ object Store {
             Files.move(temp.toPath(), target.toPath(), REPLACE_EXISTING)
         }.getOrThrow()
     }
+
+    private fun normalizeSubscriptionUrl(url: String): String = url.trim()
 
     private fun hostOf(url: String): String? = runCatching {
         if (url.isBlank()) null else java.net.URI(url).host?.removePrefix("www.")
