@@ -15,6 +15,7 @@ import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
+import pw.x4.ninety.data.Store
 
 /**
  * Read-only мост к работающему ядру (порт desktop clash-api на Android без REST):
@@ -32,14 +33,13 @@ object ClashMonitor : CommandClientHandler {
     data class Snapshot(
         val delays: Map<String, Int> = emptyMap(), // clash-tag -> ms (0 / >=65000 = недоступна)
         val selectorNow: String? = null,            // "auto" | nodeTag — что выбрано в селекторе
-        val autoNow: String? = null,                // эффективная нода авто-группы (быстрейшая)
+        val autoNow: String? = null,                // эффективная нода urltest-группы
         val connected: Boolean = false,
         val testing: Boolean = false,
         val up: Long = 0,                           // исходящий, байт/с (CommandStatus)
         val down: Long = 0,                         // входящий, байт/с
     ) {
-        /** Тег ноды, через которую реально идёт трафик (порт desktop pickEffectiveNode):
-         *  селектор «auto» → быстрейший узел auto-группы; иначе — выбранный тег. */
+        /** Тег ноды, через которую реально идёт трафик. */
         fun effectiveTag(): String? = when (val s = selectorNow) {
             null -> autoNow
             "auto" -> autoNow
@@ -97,6 +97,7 @@ object ClashMonitor : CommandClientHandler {
         val c = client
         client = null
         Thread({ try { c?.disconnect() } catch (_: Throwable) {} }, "ninety-clash-stop").start()
+        QualityRuntime.markTunnelStopped()
         main.post { snapshot = Snapshot() }
     }
 
@@ -155,17 +156,28 @@ object ClashMonitor : CommandClientHandler {
                         autoNow = g.selected
                         val items = g.items
                         while (items.hasNext()) {
-                            val it = items.next()
-                            delays[it.tag] = it.urlTestDelay
+                            val item = items.next()
+                            delays[item.tag] = item.urlTestDelay
                         }
                     }
                 }
             }
         } catch (_: Throwable) { return }
         main.post {
+            val nodes = Store.supportedActiveNodes()
+            val idByTag = nodes.associate { ConfigBuilder.tagOf(it) to it.id }
+            val delaysByNodeId = idByTag.mapValues { (tag, _) -> delays[tag] }
+            QualityRuntime.record(
+                candidateNodeIds = nodes.map { it.id },
+                delaysByNodeId = delaysByNodeId,
+                rawAutoNodeId = autoNow?.let(idByTag::get),
+            )
             snapshot = snapshot.copy(
-                delays = delays, selectorNow = selectorNow, autoNow = autoNow,
-                connected = true, testing = false,
+                delays = delays,
+                selectorNow = selectorNow,
+                autoNow = autoNow,
+                connected = true,
+                testing = false,
             )
         }
     }
