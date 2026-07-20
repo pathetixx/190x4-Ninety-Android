@@ -190,7 +190,6 @@ jobs:
 
       - name: Android debug lint
         id: lint_debug
-        if: always()
         continue-on-error: true
         shell: bash
         run: |
@@ -199,7 +198,6 @@ jobs:
 
       - name: Verify optimized release and release lint
         id: release_verify
-        if: always()
         continue-on-error: true
         shell: bash
         run: |
@@ -207,13 +205,13 @@ jobs:
           gradle :app:assembleRelease :app:lintRelease --no-daemon --stacktrace 2>&1 | tee ci-release-verify.log
 
       - name: Enable KVM for managed device
-        if: always() && steps.assemble_debug.outcome == 'success'
+        if: ${{ !cancelled() && steps.assemble_debug.outcome == 'success' }}
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
 
       - name: API 35 managed device tests
         id: instrumented
-        if: always() && steps.assemble_debug.outcome == 'success'
+        if: ${{ !cancelled() && steps.assemble_debug.outcome == 'success' }}
         continue-on-error: true
         shell: bash
         run: |
@@ -241,7 +239,7 @@ jobs:
             app/build/outputs/androidTest-results/managedDevice/**
 
       - name: Fail when Android verification failed
-        if: always()
+        if: ${{ always() && !cancelled() }}
         env:
           APP_TESTS: ${{ steps.app_tests.outcome }}
           ASSEMBLE_DEBUG: ${{ steps.assemble_debug.outcome }}
