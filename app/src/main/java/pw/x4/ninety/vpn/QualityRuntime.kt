@@ -16,6 +16,7 @@ import pw.x4.ninety.core.quality.QualityEngine
 import pw.x4.ninety.core.quality.QualityPolicy
 import pw.x4.ninety.core.quality.QualitySample
 import pw.x4.ninety.core.quality.QualityState
+import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
@@ -57,9 +58,22 @@ object QualityRuntime {
             if (initialized) return
             this.context = context.applicationContext
             prefs = Prefs.get(this.context)
-            states.putAll(parse(prefs.qualityJson))
+
+            val aliasesByProfile = Store.profilesSnapshot().associate { profile ->
+                profile.id to Store.nodesOf(profile.id).associate { node ->
+                    legacyNodeId(node) to node.id
+                }
+            }
+            val migration = migrateQualityNodeIds(
+                source = parse(prefs.qualityJson),
+                aliasesByProfile = aliasesByProfile,
+            )
+            states.putAll(migration.states)
             pruneLocked()
             initialized = true
+            if (migration.changed) {
+                prefs.qualityJson = serialize(states)
+            }
         }
         publishCurrent()
     }
@@ -76,7 +90,7 @@ object QualityRuntime {
             return requested
         }
 
-        val profileId = Store.activeProfileId
+        val profileId = Store.activeProfileIdValue()
         val candidates = candidateNodeIds.filter(String::isNotBlank).distinct()
         val nowMs = System.currentTimeMillis()
         val recommendation = synchronized(lock) {
@@ -100,7 +114,7 @@ object QualityRuntime {
         if (!initialized || !Options.data.qualityEnabled) return
         if (nowMs - lastRecordedAtMs < MIN_BATCH_INTERVAL_MS) return
 
-        val profileId = Store.activeProfileId ?: return
+        val profileId = Store.activeProfileIdValue() ?: return
         val candidates = candidateNodeIds.filter(String::isNotBlank).distinct()
         if (candidates.isEmpty()) return
         val knownNodeIds = Store.nodesOf(profileId).map { it.id }
@@ -122,19 +136,23 @@ object QualityRuntime {
             }
         }
 
-        snapshot = Snapshot(
+        val next = Snapshot(
             profileId = profileId,
             recommendedNodeId = decision.state.recommendedNodeId,
             ratings = decision.ratings,
             reason = decision.reason,
             updatedAtMs = decision.state.updatedAtMs,
         )
-        maybeApplyRecommendation(decision.state.recommendedNodeId, nowMs)
+        main.post {
+            if (!initialized) return@post
+            snapshot = next
+            maybeApplyRecommendation(decision.state.recommendedNodeId, nowMs)
+        }
     }
 
     fun rating(nodeId: String): NodeQualityRating? = snapshot.ratings[nodeId]
 
-    fun recommendedNodeId(profileId: String? = Store.activeProfileId): String? = synchronized(lock) {
+    fun recommendedNodeId(profileId: String? = Store.activeProfileIdValue()): String? = synchronized(lock) {
         profileId?.let(states::get)?.recommendedNodeId
     }
 
@@ -158,36 +176,44 @@ object QualityRuntime {
         if (nowMs - lastReloadAtMs < MIN_RELOAD_INTERVAL_MS) return
 
         lastReloadAtMs = nowMs
-        main.post {
-            if (
-                initialized && Store.isAutoActive && VpnController.state == ConnState.Connected &&
-                targetNodeId != appliedRecommendationId
-            ) {
-                NinetyVpnService.reload(context)
-            }
+        if (
+            initialized && Store.isAutoActive && VpnController.state == ConnState.Connected &&
+            targetNodeId != appliedRecommendationId
+        ) {
+            NinetyVpnService.reload(context)
         }
     }
 
     private fun publishCurrent() {
         if (!initialized) return
         val nowMs = System.currentTimeMillis()
-        val profileId = Store.activeProfileId
+        val profileId = Store.activeProfileIdValue()
         val state = synchronized(lock) { profileId?.let(states::get) }
         val candidates = Store.supportedActiveNodes().map { it.id }
         val ratings = state?.let { QualityEngine.rate(it, candidates, nowMs, policy(Options.data)) }.orEmpty()
         val recommendation = state?.recommendedNodeId
             ?.takeIf(candidates::contains)
             ?.takeIf { ratings[it]?.available == true }
-        snapshot = Snapshot(
-            profileId = profileId,
-            recommendedNodeId = recommendation,
-            ratings = ratings,
-            updatedAtMs = state?.updatedAtMs ?: 0,
+        publishSnapshot(
+            Snapshot(
+                profileId = profileId,
+                recommendedNodeId = recommendation,
+                ratings = ratings,
+                updatedAtMs = state?.updatedAtMs ?: 0,
+            ),
         )
     }
 
+    private fun publishSnapshot(value: Snapshot) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            snapshot = value
+        } else {
+            main.post { if (initialized) snapshot = value }
+        }
+    }
+
     private fun pruneLocked() {
-        val profiles = Store.profiles.associate { profile ->
+        val profiles = Store.profilesSnapshot().associate { profile ->
             profile.id to Store.nodesOf(profile.id).map { it.id }
         }
         states.keys.retainAll(profiles.keys)
@@ -296,6 +322,9 @@ object QualityRuntime {
             }
         }.getOrDefault(emptyMap())
     }
+
+    private fun legacyNodeId(node: Node): String =
+        "${node.proto}|${node.host}|${node.port}|${node.uuid}${node.password}".hashCode().toString()
 
     private const val FORMAT_VERSION = 1
     private const val HISTORY_SIZE = 12

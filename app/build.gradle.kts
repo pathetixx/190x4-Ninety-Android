@@ -4,33 +4,101 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseKeystore = System.getenv("NINETY_KEYSTORE")
+val includeEmulatorAbi = providers.gradleProperty("ninety.testEmulator").orNull == "true"
+val packagedAbis = buildList {
+    add("arm64-v8a")
+    add("armeabi-v7a")
+    if (includeEmulatorAbi) add("x86_64")
+}
+
 android {
     namespace = "pw.x4.ninety"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "pw.x4.ninety"
         minSdk = 26
         targetSdk = 35
-        versionCode = 300
-        versionName = "0.3.0"
+        versionCode = 301
+        versionName = "0.3.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    splits { abi { isEnable = true; reset(); include("arm64-v8a", "armeabi-v7a"); isUniversalApk = false } }
-    signingConfigs { create("release") { System.getenv("NINETY_KEYSTORE")?.let { ks -> storeFile=file(ks); storePassword=System.getenv("NINETY_KEYSTORE_PASSWORD"); keyAlias=System.getenv("NINETY_KEY_ALIAS"); keyPassword=System.getenv("NINETY_KEYSTORE_PASSWORD") } } }
-    buildTypes {
-        getByName("debug") { isMinifyEnabled=false; applicationIdSuffix=".debug" }
-        getByName("release") { isMinifyEnabled=false; isShrinkResources=false; signingConfig=signingConfigs.getByName("release") }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include(*packagedAbis.toTypedArray())
+            isUniversalApk = false
+        }
     }
-    compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
-    kotlinOptions { jvmTarget="17" }
-    buildFeatures { compose=true; buildConfig=true }
+
+    signingConfigs {
+        if (!releaseKeystore.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("NINETY_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("NINETY_KEY_ALIAS")
+                keyPassword = System.getenv("NINETY_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            isMinifyEnabled = false
+            applicationIdSuffix = ".debug"
+        }
+        getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            signingConfig = signingConfigs.findByName("release")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
-    lint { abortOnError=true; checkReleaseBuilds=false }
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = true
+    }
+    testOptions {
+        unitTests.all { it.useJUnitPlatform() }
+        managedDevices {
+            localDevices {
+                create("pixel2Api35") {
+                    device = "Pixel 2"
+                    apiLevel = 35
+                    systemImageSource = "aosp"
+                    require64Bit = true
+                }
+            }
+        }
+    }
 }
 
 dependencies {
-    implementation(project(":core:model")); implementation(project(":core:parser")); implementation(project(":core:config")); implementation(project(":core:runtime")); implementation(project(":core:quality")); implementation(project(":data"))
+    implementation(project(":core:model"))
+    implementation(project(":core:parser"))
+    implementation(project(":core:config"))
+    implementation(project(":core:runtime"))
+    implementation(project(":core:quality"))
+    implementation(project(":data"))
     implementation(fileTree("libs") { include("*.aar") })
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -38,9 +106,23 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.wireguard.android:tunnel:1.0.20260102")
+
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
-    implementation(composeBom); implementation("androidx.compose.ui:ui"); implementation("androidx.compose.ui:ui-graphics"); implementation("androidx.compose.ui:ui-tooling-preview"); implementation("androidx.compose.material3:material3"); implementation("androidx.compose.material:material-icons-extended")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     testImplementation(kotlin("test-junit5"))
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.3")
+
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

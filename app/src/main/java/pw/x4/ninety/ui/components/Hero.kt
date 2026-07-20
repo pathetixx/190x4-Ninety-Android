@@ -1,5 +1,6 @@
 package pw.x4.ninety.ui.components
 
+import android.animation.ValueAnimator
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path as AndroidPath
@@ -35,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -78,14 +84,7 @@ private fun ConnState.phase() = when (this) {
     ConnState.Connected -> Phase.Secured
 }
 
-/**
- * Pixel-geometry port of desktop `.hero__stage` + `hero-hud.js`.
- *
- * The 400×400 HUD coordinate system, 72/90 tick rings, five segmented arcs,
- * integrity gauge, curved status/target text, clock, diagnostic readout and
- * independent rotations match the desktop source. [stageSize] is the desktop
- * `.hero__stage`; the HUD intentionally renders at 114% and the mask disc at 42%.
- */
+/** Pixel-geometry port of desktop `.hero__stage` + `hero-hud.js`. */
 @Composable
 fun Hero(
     state: ConnState,
@@ -98,20 +97,24 @@ fun Hero(
     val phase = state.phase()
     val secured = phase == Phase.Secured
     val lightHud = pack.id in LIGHT_HUD_THEMES
+    val animationsEnabled = rememberAnimationsEnabled()
 
     val outerTransition = rememberInfiniteTransition(label = "desktopHero")
     val outerAngle by outerTransition.animateFloat(
-        0f, 360f,
+        0f,
+        if (animationsEnabled) 360f else 0f,
         infiniteRepeatable(tween(60_000, easing = LinearEasing), RepeatMode.Restart),
         label = "hudOuter",
     )
     val segmentAngle by outerTransition.animateFloat(
-        360f, 0f,
+        if (animationsEnabled) 360f else 0f,
+        0f,
         infiniteRepeatable(tween(36_000, easing = LinearEasing), RepeatMode.Restart),
         label = "hudSegments",
     )
     val ticksAngle by outerTransition.animateFloat(
-        0f, 360f,
+        0f,
+        if (animationsEnabled) 360f else 0f,
         infiniteRepeatable(tween(112_500, easing = LinearEasing), RepeatMode.Restart),
         label = "hudTicks",
     )
@@ -122,7 +125,8 @@ fun Hero(
         Phase.Standby -> 6000
     }
     val breath by outerTransition.animateFloat(
-        0f, 1f,
+        0f,
+        if (animationsEnabled) 1f else 0f,
         infiniteRepeatable(tween(breathMs, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "heroBreath",
     )
@@ -140,20 +144,25 @@ fun Hero(
             delay(1000)
         }
     }
-    LaunchedEffect(phase) {
+    LaunchedEffect(phase, animationsEnabled) {
+        integrity = integrityFor(phase)
+        if (!animationsEnabled) return@LaunchedEffect
         while (true) {
-            integrity = integrityFor(phase)
             delay(1600)
+            integrity = integrityFor(phase)
         }
     }
-    LaunchedEffect(phase) {
+    LaunchedEffect(phase, animationsEnabled) {
         diagnosticIndex = 0
+        if (!animationsEnabled) return@LaunchedEffect
         while (true) {
             delay(2400)
             diagnosticIndex++
         }
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(animationsEnabled) {
+        sysOpacity = 1f
+        if (!animationsEnabled) return@LaunchedEffect
         while (true) {
             delay(1500)
             sysOpacity = 0.18f
@@ -161,10 +170,10 @@ fun Hero(
             sysOpacity = 1f
         }
     }
-    LaunchedEffect(pack.id) {
+    LaunchedEffect(pack.id, animationsEnabled) {
         glitchOffset = 0f
         glitchOpacity = 1f
-        if (!lightHud) {
+        if (animationsEnabled && !lightHud) {
             while (true) {
                 delay(4000)
                 if (Random.nextFloat() <= 0.6f) continue
@@ -180,14 +189,21 @@ fun Hero(
     }
 
     val burst = remember { Animatable(1f) }
-    LaunchedEffect(phase) {
+    LaunchedEffect(phase, animationsEnabled) {
+        if (!animationsEnabled) {
+            burst.snapTo(1f)
+            return@LaunchedEffect
+        }
         burst.snapTo(0f)
         burst.animateTo(1f, tween(if (secured) 900 else 600, easing = FastOutSlowInEasing))
     }
     val ripple = remember { Animatable(1f) }
     var rippleKey by remember { mutableIntStateOf(0) }
-    LaunchedEffect(rippleKey) {
-        if (rippleKey == 0) return@LaunchedEffect
+    LaunchedEffect(rippleKey, animationsEnabled) {
+        if (rippleKey == 0 || !animationsEnabled) {
+            ripple.snapTo(1f)
+            return@LaunchedEffect
+        }
         ripple.snapTo(0f)
         ripple.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
     }
@@ -212,8 +228,9 @@ fun Hero(
         secured -> 1.05f
         else -> 0.92f
     }
-    val maskBrightness by animateFloatAsState(maskBrightnessTarget, tween(500), label = "maskBrightness")
-    val maskSaturation by animateFloatAsState(maskSaturationTarget, tween(500), label = "maskSaturation")
+    val colorTween = tween<Float>(if (animationsEnabled) 500 else 0)
+    val maskBrightness by animateFloatAsState(maskBrightnessTarget, colorTween, label = "maskBrightness")
+    val maskSaturation by animateFloatAsState(maskSaturationTarget, colorTween, label = "maskSaturation")
 
     val heroOpacity = when (phase) {
         Phase.Standby -> 0.50f
@@ -239,6 +256,12 @@ fun Hero(
         Phase.Standby -> "STAND-BY"
     }
     val targetLabel = if (secured) target?.takeIf(String::isNotBlank) ?: "190X4" else "UNKNOWN"
+    val controlDescription = when (state) {
+        ConnState.Idle -> "Подключить VPN"
+        ConnState.Connecting -> "VPN подключается"
+        ConnState.Connected -> "Отключить VPN"
+        ConnState.Stopping -> "VPN отключается"
+    }
 
     Box(modifier.size(stageSize), contentAlignment = Alignment.Center) {
         Box(
@@ -365,7 +388,7 @@ fun Hero(
                 diagnostic = diagnostic,
                 systemAlpha = sysOpacity,
                 diagnosticColor = if (secured) Ink.TextLo else Ink.Err,
-                glitch = !lightHud && glitchOffset != 0f,
+                glitch = animationsEnabled && !lightHud && glitchOffset != 0f,
                 secondary = pack.material.secondary,
             )
         }
@@ -391,11 +414,16 @@ fun Hero(
                     if (secured) pack.material.border.copy(alpha = 0.92f) else Ink.Line2,
                     CircleShape,
                 )
+                .semantics {
+                    role = Role.Button
+                    contentDescription = controlDescription
+                }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    enabled = state == ConnState.Idle || state == ConnState.Connected,
                 ) {
-                    rippleKey++
+                    if (animationsEnabled) rippleKey++
                     onToggle()
                 },
             contentAlignment = Alignment.Center,
@@ -404,6 +432,7 @@ fun Hero(
                 brightness = maskBrightness,
                 saturation = maskSaturation,
                 contrast = if (pack.id in setOf("porcelain", "titanium")) 1.18f else 1.05f,
+                playbackEnabled = animationsEnabled,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -535,38 +564,56 @@ private fun HeroMaskVideo(
     brightness: Float,
     saturation: Float,
     contrast: Float,
+    playbackEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val currentPlaybackEnabled = rememberUpdatedState(playbackEnabled)
     val player = remember { MediaPlayer().apply { isLooping = true; setVolume(0f, 0f) } }
     var prepared by remember { mutableStateOf(false) }
     val layerPaint = remember { Paint() }
     val lastFilter = remember { floatArrayOf(Float.NaN, Float.NaN, Float.NaN) }
 
     val textureView = remember {
+        var sourceConfigured = false
         TextureView(context).apply {
             isOpaque = true
             surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                 override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
                     runCatching {
-                        player.setSurface(Surface(st))
-                        context.resources.openRawResourceFd(R.raw.hero_mask).use { afd ->
-                            player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                        }
-                        player.setOnPreparedListener { mediaPlayer ->
-                            runCatching {
-                                mediaPlayer.playbackParams = mediaPlayer.playbackParams.setSpeed(0.7f)
+                        val surface = Surface(st)
+                        player.setSurface(surface)
+                        surface.release()
+                        if (!sourceConfigured) {
+                            context.resources.openRawResourceFd(R.raw.hero_mask).use { afd ->
+                                player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
                             }
-                            runCatching { mediaPlayer.start() }
-                            prepared = true
+                            player.setOnPreparedListener { mediaPlayer ->
+                                runCatching {
+                                    mediaPlayer.playbackParams = mediaPlayer.playbackParams.setSpeed(0.7f)
+                                }
+                                prepared = true
+                                if (
+                                    currentPlaybackEnabled.value &&
+                                    lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                                ) {
+                                    runCatching { mediaPlayer.start() }
+                                }
+                            }
+                            sourceConfigured = true
+                            player.prepareAsync()
                         }
-                        player.prepareAsync()
                     }
                 }
 
                 override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) = Unit
-                override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = true
+
+                override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+                    runCatching { player.setSurface(null) }
+                    return true
+                }
+
                 override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
             }
         }
@@ -576,7 +623,9 @@ private fun HeroMaskVideo(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> runCatching { if (player.isPlaying) player.pause() }
-                Lifecycle.Event.ON_RESUME -> runCatching { if (prepared && !player.isPlaying) player.start() }
+                Lifecycle.Event.ON_RESUME -> runCatching {
+                    if (prepared && currentPlaybackEnabled.value && !player.isPlaying) player.start()
+                }
                 else -> Unit
             }
         }
@@ -584,6 +633,15 @@ private fun HeroMaskVideo(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { player.release() }
+        }
+    }
+
+    LaunchedEffect(playbackEnabled, prepared, lifecycleOwner.lifecycle.currentState) {
+        if (!prepared) return@LaunchedEffect
+        if (playbackEnabled && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            runCatching { if (!player.isPlaying) player.start() }
+        } else {
+            runCatching { if (player.isPlaying) player.pause() }
         }
     }
 
@@ -606,6 +664,22 @@ private fun HeroMaskVideo(
             }
         },
     )
+}
+
+@Composable
+private fun rememberAnimationsEnabled(): Boolean {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var enabled by remember { mutableStateOf(ValueAnimator.areAnimatorsEnabled()) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                enabled = ValueAnimator.areAnimatorsEnabled()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return enabled
 }
 
 private fun androidMaskMatrix(

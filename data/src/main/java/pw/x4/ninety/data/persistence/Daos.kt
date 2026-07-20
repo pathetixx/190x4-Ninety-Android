@@ -13,6 +13,9 @@ interface ProfileDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(values: List<ProfileEntity>)
 
+    @Query("DELETE FROM profiles WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     @Query("DELETE FROM profiles")
     suspend fun deleteAll()
 }
@@ -24,6 +27,9 @@ interface NodeDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(values: List<NodeEntity>)
+
+    @Query("DELETE FROM nodes WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 
     @Query("DELETE FROM nodes")
     suspend fun deleteAll()

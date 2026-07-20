@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- скачанный OTA-APK лежит в cacheDir/ -->
-    <cache-path name="ota" path="." />
+    <cache-path name="ota" path="updates/" />
+    <cache-path name="diagnostics" path="diagnostics/" />
 </paths>

@@ -3,10 +3,8 @@ package pw.x4.ninety.data
 import org.json.JSONObject
 
 /**
- * Узел (нода) — один прокси-сервер. Поля — надмножество всех протоколов
- * (порт из singbox.js). Пустые/0 = не задано. proto: vless|vmess|trojan|
- * shadowsocks|hysteria2|tuic. xhttp-транспорт помечается type="xhttp" и в M2
- * считается неподдерживаемым (нужен xray, M3).
+ * Узел (нода) — один прокси-сервер. Поля являются надмножеством поддерживаемых
+ * протоколов libbox. Пустые строки и нули означают, что параметр не задан.
  */
 data class Node(
     val proto: String,
@@ -15,11 +13,11 @@ data class Node(
     val port: Int,
     val uuid: String = "",
     val password: String = "",
-    val method: String = "",       // shadowsocks-метод
-    val cipher: String = "auto",   // vmess-шифр (scy)
+    val method: String = "",
+    val cipher: String = "auto",
     val alterId: Int = 0,
-    val security: String = "none", // TLS-режим: tls|reality|none
-    val type: String = "tcp",      // transport: tcp|ws|grpc|http|xhttp
+    val security: String = "none",
+    val type: String = "tcp",
     val flow: String = "",
     val sni: String = "",
     val fp: String = "chrome",
@@ -30,7 +28,7 @@ data class Node(
     val hostHeader: String = "",
     val serviceName: String = "",
     val mode: String = "",
-    val extra: String = "",        // сырой JSON из ссылки (?extra=) — xhttp-подопции для xray
+    val extra: String = "",
     val upMbps: Int = 0,
     val downMbps: Int = 0,
     val obfs: String = "",
@@ -44,16 +42,59 @@ data class Node(
     val plugin: String = "",
     val pluginOpts: String = "",
     val raw: String = "",
-    val fromSub: Boolean = false,  // пришла из подписки → заменяется при refresh
-    val subId: String = "",        // id профиля-владельца (Profile.id); "" = legacy
+    val fromSub: Boolean = false,
+    val subId: String = "",
 ) {
-    /** Стабильный id для выбора/персиста. */
-    val id: String get() = "$proto|$host|$port|$uuid$password".hashCode().toString()
+    /** Fingerprint of every connection-affecting field, independent of display name/profile. */
+    val fingerprint: String
+        get() = StableId.sha256(
+            buildString {
+                listOf(
+                    proto,
+                    host.lowercase(),
+                    port.toString(),
+                    uuid,
+                    password,
+                    method,
+                    cipher,
+                    alterId.toString(),
+                    security,
+                    type,
+                    flow,
+                    sni,
+                    fp,
+                    pbk,
+                    sid,
+                    alpn,
+                    path,
+                    hostHeader,
+                    serviceName,
+                    mode,
+                    extra,
+                    upMbps.toString(),
+                    downMbps.toString(),
+                    obfs,
+                    obfsPassword,
+                    pinSHA256,
+                    congestion,
+                    udpRelay,
+                    insecure.toString(),
+                    zeroRtt.toString(),
+                    disableSni.toString(),
+                    plugin,
+                    pluginOpts,
+                ).forEach { value ->
+                    append(value.length).append(':').append(value).append('|')
+                }
+            },
+        )
 
-    /** Все узлы поддержаны нативно libbox (xhttp — через transport=xhttp форка). */
+    /** Profile-scoped stable id; the same endpoint may safely exist in multiple profiles. */
+    val id: String get() = StableId.node(subId, fingerprint)
+
+    /** Все текущие протоколы и xHTTP поддержаны нативным libbox fork. */
     val supported: Boolean get() = true
 
-    /** xhttp-транспорт: sing-box его не тянет, поднимается через standalone-xray + socks-мост. */
     val isXhttp: Boolean get() = type == "xhttp"
 
     fun toJson(): JSONObject = JSONObject().apply {

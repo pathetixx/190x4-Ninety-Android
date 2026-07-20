@@ -181,6 +181,14 @@ object ClashMonitor {
 
         timeoutFuture = executor.schedule({
             if (!isCurrent(session, epoch) || activeCycle != probeCycle) return@schedule
+            val candidateIds = Store.supportedActiveNodes().map { it.id }
+            if (candidateIds.isNotEmpty() && resultCycle < probeCycle) {
+                QualityRuntime.record(
+                    candidateNodeIds = candidateIds,
+                    delaysByNodeId = candidateIds.associateWith { null },
+                    rawAutoNodeId = null,
+                )
+            }
             publish(session, epoch) { currentSnapshot ->
                 if (currentSnapshot.probeCycle != probeCycle || !currentSnapshot.testing) {
                     currentSnapshot
@@ -270,12 +278,22 @@ object ClashMonitor {
         }
 
         if (!isCurrent(session, epoch)) return
-        if (delays.isNotEmpty()) resultCycle = completedCycle
+        val activeNodesByTag = Store.supportedActiveNodes().associateBy(ConfigBuilder::tagOf)
+        val expectedTags = activeNodesByTag.keys
+        val currentDelays = delays.filterKeys { it in expectedTags }
+        val allReturned = expectedTags.isNotEmpty() && expectedTags.all(currentDelays::containsKey)
+        val anyReturned = currentDelays.isNotEmpty()
+        if (anyReturned) {
+            resultCycle = completedCycle
+            QualityRuntime.record(
+                candidateNodeIds = activeNodesByTag.values.map { it.id },
+                delaysByNodeId = activeNodesByTag.map { (tag, node) ->
+                    node.id to currentDelays[tag]?.takeIf(::validDelay)
+                }.toMap(),
+                rawAutoNodeId = autoNow?.let { activeNodesByTag[it]?.id },
+            )
+        }
         publish(session, epoch) { previous ->
-            val expectedTags = Store.supportedActiveNodes().map { ConfigBuilder.tagOf(it) }.toSet()
-            val currentDelays = delays.filterKeys { it in expectedTags }
-            val allReturned = expectedTags.isNotEmpty() && expectedTags.all(currentDelays::containsKey)
-            val anyReturned = currentDelays.isNotEmpty()
             val phase = when {
                 !canProbe() -> ProbePhase.Ready
                 allReturned -> ProbePhase.Ready

@@ -11,7 +11,7 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-    <!-- OTA: установка APK поверх (милстоун 2) -->
+    <!-- OTA: установка APK поверх -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
@@ -21,13 +21,10 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="false"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:extractNativeLibs="true"
         android:theme="@style/Theme.Ninety">
-        <!-- extractNativeLibs=true: либы СЖАТЫ в APK (DEFLATE) → download маленький
-             (sideload с GitHub). false выровнял бы их несжато под mmap (меньше место
-             установки, но APK +~35 МБ) — нам не надо. Когда-то было для exec xray, но
-             и без xray компрессия libbox выгоднее для размера скачивания. -->
+        <!-- extractNativeLibs=true keeps the sideload APK smaller by compressing libbox. -->
 
         <activity
             android:name=".MainActivity"
@@ -47,7 +44,6 @@
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:theme="@style/Theme.Ninety" />
 
-        <!-- Плитка быстрых настроек (шторка): вкл/выкл VPN одним тапом -->
         <service
             android:name=".vpn.NinetyTileService"
             android:exported="true"
@@ -59,7 +55,6 @@
             </intent-filter>
         </service>
 
-        <!-- OTA: отдаёт скачанный APK системному установщику -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
