@@ -1,6 +1,6 @@
 name: Build Ninety Android
 
-# Core/runtime and data tests fail fast before the expensive native build.
+# Core/runtime/quality and data tests fail fast before the expensive native build.
 # Release: only on semver tag vX.Y.Z; workflow_dispatch is for ad-hoc verification.
 on:
   pull_request:
@@ -43,11 +43,11 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Model, parser, config and runtime tests
+      - name: Model, parser, config, runtime and quality tests
         shell: bash
         run: |
           set -o pipefail
-          gradle :core:model:test :core:parser:test :core:config:test :core:runtime:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
+          gradle :core:model:test :core:parser:test :core:config:test :core:runtime:test :core:quality:test --no-daemon --stacktrace 2>&1 | tee ci-core-tests.log
 
       - name: Upload PR core diagnostics
         if: always() && github.event_name == 'pull_request'
@@ -61,6 +61,7 @@ jobs:
             core/parser/build/reports/tests/**
             core/config/build/reports/tests/**
             core/runtime/build/reports/tests/**
+            core/quality/build/reports/tests/**
 
   data:
     name: data migration tests
