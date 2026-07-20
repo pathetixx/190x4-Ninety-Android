@@ -172,8 +172,9 @@ object Diag {
     }
 
     fun writeReportFile(ctx: Context): File {
+        val directory = File(ctx.cacheDir, "diagnostics").apply { mkdirs() }
         val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(Date())
-        return File(ctx.cacheDir, "ninety-diag-$stamp.txt").apply {
+        return File(directory, "ninety-diag-$stamp.txt").apply {
             writeText(fullReport(ctx))
         }
     }
@@ -187,6 +188,7 @@ object Diag {
         logcatFile(ctx).delete()
         xrayFile(ctx).delete()
         xrayConfigFile(ctx).delete()
+        File(ctx.cacheDir, "diagnostics").deleteRecursively()
     }
 
     private const val DISPLAY_LIMIT = 8_000
