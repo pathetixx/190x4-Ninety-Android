@@ -2,7 +2,7 @@
 
 ## Цель
 
-Переписать Android-клиент вокруг проверенного `VpnService + libbox`, сохранив общие продуктовые правила desktop-Ninety и отдельные platform adapters.
+Android-клиент построен вокруг `VpnService + libbox`, сохраняет общие продуктовые правила desktop Ninety и отделяет их от platform-specific effects.
 
 Кроссплатформенный контракт:
 
@@ -30,7 +30,7 @@
   bounded history, health score, cooldown and stable Auto
 
 :data
-  Room, DataStore, migration, rollback and encrypted secrets
+  Room, DataStore, migration and encrypted secrets
 
 :app
   Compose, Android adapters, VpnService, libbox and Cloudflare registration
@@ -46,7 +46,7 @@ Core-модули не импортируют Android, Compose, libbox или к
 
 `core:config` принимает `ConfigNode`, `ProxySelection`, immutable `SingBoxOptions` и путь лога. Он детерминированно строит sing-box 1.13 JSON и покрыт golden tests для протоколов, DNS/FakeDNS, regional routes, custom routing, TLS tricks, mux и WARP.
 
-Android `ConfigBuilder` только переводит legacy `Node`/`Options.Data` в core DTO.
+Android `ConfigBuilder` переводит legacy `Node`/`Options.Data` в core DTO и получает устойчивую Auto-рекомендацию от `QualityRuntime`.
 
 ## Data boundary
 
@@ -55,17 +55,22 @@ Android `ConfigBuilder` только переводит legacy `Node`/`Options.D
 - Room `ninety.db`, profiles/nodes и cascade delete;
 - Preferences DataStore;
 - verified legacy migration;
-- rollback journal;
 - AES/GCM Android Keystore codec;
 - отдельным encrypted WARP store.
 
-`Store`, `Prefs` и `Options` остаются временными синхронными facade. WARP private key, access token и license не входят в `optionsJson`, Room или quality history.
+`Store`, `Prefs` и `Options` остаются временными синхронными facade над in-memory snapshot. После подтверждённой миграции plaintext JSON и SharedPreferences удаляются; legacy journal используется только как fallback при неуспешном bootstrap. Горячие Room/DataStore записи выполняются одной фоновой очередью.
+
+Ноды имеют collision-resistant fingerprint полной конфигурации и profile-scoped instance id, поэтому один сервер может безопасно присутствовать в нескольких профилях.
+
+WARP private key, access token и license не входят в `optionsJson`, Room или quality history.
 
 ## Runtime boundary
 
 `:core:runtime` владеет `Start`, `Reload`, `Stop`, фазами и generation token. Android выполняет platform effects одной FIFO-очередью. Поздняя старая операция не может опубликовать Connected или остановить новый запуск.
 
 `CommandServer`, in-flight server, TUN fd и network callback закрываются через одну resource boundary. `VpnController` публикует `StateFlow<VpnSnapshot>`.
+
+Android `VpnService.Builder` применяет либо app allowlist, либо denylist. Эти режимы никогда не смешиваются; собственный пакет Ninety исключается через denylist только при отсутствии allowlist.
 
 ## Responsive UI boundary
 
@@ -87,7 +92,9 @@ Android `ConfigBuilder` только переводит legacy `Node`/`Options.D
 
 `:core:quality` хранит bounded history, median/p90 jitter, success rate, failures, cooldown и score `0..100`. Первый batch закрепляет effective node, challenger переключает Auto только после history+dwell+margin, недоступный incumbent заменяется сразу.
 
-История разделена по profile id и хранится в `quality_json`. Stale recommendation не применяется. Direct WARP не записывает quality batches и не вызывает proxy reload; Chain продолжает использовать устойчивый Auto. Контракт: `docs/QUALITY_ENGINE.md`.
+`ClashMonitor` переводит libbox urltest tags в node ids и передаёт полные/partial/timeout batches в `QualityRuntime`. История разделена по profile id и хранится в `quality_json`; выбранная рекомендация применяется при следующем config build и вызывает reload только при реальной смене effective node.
+
+Direct WARP не записывает proxy quality batches и не вызывает proxy reload; Chain продолжает использовать устойчивый Auto. Контракт: `docs/QUALITY_ENGINE.md`.
 
 ## WARP boundary
 
@@ -114,6 +121,14 @@ new keypair -> remote registration -> optional license activation
 
 WARP UI находится в `Настройки → Маршрутизация`. Endpoint scanner/deep scan отложены. Полный контракт: `docs/WARP.md`.
 
+## Network and export security
+
+- сетевые подписки принимаются только по HTTPS;
+- тело подписки ограничено 10 МБ;
+- OTA выбирает точный ABI, ограничивает размер и требует SHA-256 asset;
+- FileProvider открывает только `cache/updates` и `cache/diagnostics`;
+- диагностический export ограничивается по размеру и проходит secret redaction.
+
 ## Platform capabilities
 
 Android:
@@ -135,9 +150,12 @@ Android:
 :core:runtime:test
 :core:quality:test
 :data:testDebugUnitTest
+:app:testDebugUnitTest
 :app:assembleDebug
 :app:lintDebug
 ```
+
+Tag/dispatch дополнительно выполняет `:app:assembleRelease :app:lintRelease`, создаёт per-ABI SHA-256 и только после успешной Android job передаёт файлы отдельной publish job с `contents: write`.
 
 CI не заменяет real-device tests. Обязательны upgrade migration, start/stop/reload/revoke, responsive matrix, routing first-match/package owner, Quality hysteresis/cooldown и полный WARP registration/Direct/Chain/reset/network-failure smoke-test.
 
@@ -150,7 +168,8 @@ CI не заменяет real-device tests. Обязательны upgrade migra
 5. ✅ Serialized runtime.
 6. ✅ Responsive UI.
 7. ✅ Advanced / Custom routing.
-8. ✅ Advanced / Quality Engine.
+8. ✅ Advanced / Quality Engine integration.
 9. ✅ Advanced / WARP Direct/Chain integration.
+10. ✅ Runtime, storage, import, diagnostics and OTA hardening.
 
-Следующий этап определяется после real-device smoke review; PR остаётся draft.
+Текущий release gate — зелёный CI на итоговом PR head и обязательный smoke-test на физическом устройстве перед тегом.
