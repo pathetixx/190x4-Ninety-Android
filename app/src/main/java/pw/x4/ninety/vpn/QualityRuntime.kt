@@ -16,6 +16,7 @@ import pw.x4.ninety.core.quality.QualityEngine
 import pw.x4.ninety.core.quality.QualityPolicy
 import pw.x4.ninety.core.quality.QualitySample
 import pw.x4.ninety.core.quality.QualityState
+import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Options
 import pw.x4.ninety.data.Prefs
 import pw.x4.ninety.data.Store
@@ -57,9 +58,22 @@ object QualityRuntime {
             if (initialized) return
             this.context = context.applicationContext
             prefs = Prefs.get(this.context)
-            states.putAll(parse(prefs.qualityJson))
+
+            val aliasesByProfile = Store.profiles.associate { profile ->
+                profile.id to Store.nodesOf(profile.id).associate { node ->
+                    legacyNodeId(node) to node.id
+                }
+            }
+            val migration = migrateQualityNodeIds(
+                source = parse(prefs.qualityJson),
+                aliasesByProfile = aliasesByProfile,
+            )
+            states.putAll(migration.states)
             pruneLocked()
             initialized = true
+            if (migration.changed) {
+                prefs.qualityJson = serialize(states)
+            }
         }
         publishCurrent()
     }
@@ -308,6 +322,9 @@ object QualityRuntime {
             }
         }.getOrDefault(emptyMap())
     }
+
+    private fun legacyNodeId(node: Node): String =
+        "${node.proto}|${node.host}|${node.port}|${node.uuid}${node.password}".hashCode().toString()
 
     private const val FORMAT_VERSION = 1
     private const val HISTORY_SIZE = 12
