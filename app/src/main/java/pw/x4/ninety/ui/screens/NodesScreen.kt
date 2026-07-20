@@ -45,8 +45,6 @@ import androidx.compose.ui.unit.dp
 import pw.x4.ninety.data.Node
 import pw.x4.ninety.data.Store
 import pw.x4.ninety.ui.components.PingPill
-import pw.x4.ninety.ui.components.ScreenHeader
-import pw.x4.ninety.ui.components.topHairline
 import pw.x4.ninety.ui.icons.NinetyIcons
 import pw.x4.ninety.ui.layout.NinetyLayoutMetrics
 import pw.x4.ninety.ui.layout.NinetyPage
@@ -75,24 +73,20 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
 
     NinetyPage(metrics) {
         Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
-                ScreenHeader(
-                    kicker = "Nodes" + (profile?.name?.let { " · $it" } ?: ""),
-                    title = "Ноды",
-                    sub = probeSummary(nodes.size, connected, monitor.phase, monitor.lastError),
-                )
+            Column(Modifier.fillMaxSize().padding(top = if (metrics.isCompact) 16.dp else 24.dp)) {
+                NodesHeader(profile?.name, nodes.size, monitor.phase)
                 Spacer(Modifier.height(14.dp))
-                ProbeBanner(monitor.phase, monitor.lastError, monitor.measuredAtMs)
-                Spacer(Modifier.height(14.dp))
+                ProbeBanner(monitor.phase, monitor.lastError, monitor.measuredAtMs, nodes.size)
+                Spacer(Modifier.height(12.dp))
 
                 if (nodes.isEmpty()) {
                     EmptyNodes(Modifier.fillMaxSize())
                 } else {
                     LazyVerticalGrid(
-                        columns = if (metrics.isCompact) GridCells.Fixed(1) else GridCells.Adaptive(286.dp),
+                        columns = if (metrics.isExpanded || metrics.isCompact) GridCells.Fixed(1) else GridCells.Adaptive(310.dp),
                         modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (metrics.isExpanded) 7.dp else 10.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             bottom = if (connected && TunnelModes.current() != TunnelMode.WARP_DIRECT) 92.dp else 28.dp,
                         ),
@@ -100,22 +94,44 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
                         if (nodes.size >= 2) {
                             item(key = "__auto__", span = { GridItemSpan(maxLineSpan) }) {
                                 val effective = nodeByTag(nodes, monitor.autoNow)
-                                AutoCard(
-                                    selected = Store.isAutoActive,
-                                    effectiveName = effective?.let { it.name.ifBlank { it.host } },
-                                    ping = monitor.autoNow?.let(monitor.delays::get),
-                                    phase = monitor.phase,
-                                    onClick = { select(context, Store.AUTO_ID) },
-                                )
+                                if (metrics.isExpanded) {
+                                    DesktopAutoRow(
+                                        selected = Store.isAutoActive,
+                                        effectiveName = effective?.let { it.name.ifBlank { it.host } },
+                                        ping = monitor.autoNow?.let(monitor.delays::get),
+                                        phase = monitor.phase,
+                                        onClick = { select(context, Store.AUTO_ID) },
+                                    )
+                                } else {
+                                    CompactAutoCard(
+                                        selected = Store.isAutoActive,
+                                        effectiveName = effective?.let { it.name.ifBlank { it.host } },
+                                        ping = monitor.autoNow?.let(monitor.delays::get),
+                                        phase = monitor.phase,
+                                        onClick = { select(context, Store.AUTO_ID) },
+                                    )
+                                }
                             }
                         }
                         items(nodes, key = { it.id }) { node ->
-                            NodeCard(
-                                node = node,
-                                selected = node.id == Store.activeId,
-                                ping = monitor.delays[ConfigBuilder.tagOf(node)],
-                                onClick = { select(context, node.id) },
-                            )
+                            val ping = monitor.delays[ConfigBuilder.tagOf(node)]
+                            if (metrics.isExpanded) {
+                                DesktopNodeRow(
+                                    node = node,
+                                    selected = node.id == Store.activeId,
+                                    effective = ConfigBuilder.tagOf(node) == monitor.effectiveTag(),
+                                    ping = ping,
+                                    onClick = { select(context, node.id) },
+                                )
+                            } else {
+                                CompactNodeCard(
+                                    node = node,
+                                    selected = node.id == Store.activeId,
+                                    effective = ConfigBuilder.tagOf(node) == monitor.effectiveTag(),
+                                    ping = ping,
+                                    onClick = { select(context, node.id) },
+                                )
+                            }
                         }
                     }
                 }
@@ -132,7 +148,37 @@ fun NodesScreen(metrics: NinetyLayoutMetrics) {
 }
 
 @Composable
-private fun ProbeBanner(phase: ProbePhase, error: String?, measuredAtMs: Long) {
+private fun NodesHeader(profile: String?, count: Int, phase: ProbePhase) {
+    Column {
+        Text("PROXY FLEET · $count", style = KickerStyle, color = Ink.TextFaint)
+        Spacer(Modifier.height(5.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Text("Ноды", style = NinetyTypography.headlineMedium, color = Ink.TextHi)
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    profile?.let { "$it · штатный Auto sing-box · ${phaseLabel(phase)}" }
+                        ?: "Профиль не выбран",
+                    style = NinetyTypography.bodyMedium,
+                    color = Ink.TextMid,
+                )
+            }
+            Text(
+                TunnelModes.current().title.uppercase(),
+                style = KickerStyle,
+                color = NinetyState.pack.accentBright,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProbeBanner(
+    phase: ProbePhase,
+    error: String?,
+    measuredAtMs: Long,
+    nodeCount: Int,
+) {
     val pack = NinetyState.pack
     val (label, color) = when (phase) {
         ProbePhase.Offline -> "PING · OFFLINE" to Ink.TextFaint
@@ -142,61 +188,34 @@ private fun ProbeBanner(phase: ProbePhase, error: String?, measuredAtMs: Long) {
         ProbePhase.Ready -> "PING · READY" to Ink.Ok
         ProbePhase.Error -> "PING · ERROR" to Ink.Err
     }
+    val measured = ClashMonitor.snapshot.delays.values.count(::validPing)
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(11.dp))
-            .background(Ink.Ink1)
-            .border(1.dp, Ink.Line1, RoundedCornerShape(11.dp))
-            .padding(horizontal = 13.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().height(46.dp).background(Ink.Ink1)
+            .border(1.dp, Ink.Line1).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(7.dp).background(color, CircleShape))
         Spacer(Modifier.width(9.dp))
         Text(label, style = KickerStyle, color = color)
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Text(
-            error ?: measuredAtMs.takeIf { it > 0 }?.let { "результат обновлён" } ?: "ожидание ядра",
+            error ?: when {
+                measuredAtMs > 0 -> "$measured / $nodeCount результатов"
+                phase == ProbePhase.Offline -> "Запустите VPN для проверки"
+                else -> "Ожидание CommandClient"
+            },
             style = MonoStyle,
             color = Ink.TextLo,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        Text("10s timeout", style = KickerStyle, color = Ink.TextFaint)
     }
 }
 
 @Composable
-private fun EmptyNodes(modifier: Modifier = Modifier) {
-    Column(
-        modifier.padding(top = 36.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Ink.Ink2)
-                .border(1.dp, Ink.Line2, RoundedCornerShape(20.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(NinetyIcons.Nodes, null, tint = Ink.TextFaint, modifier = Modifier.size(30.dp))
-        }
-        Spacer(Modifier.height(18.dp))
-        Text("NODES · EMPTY", style = KickerStyle, color = Ink.TextFaint)
-        Spacer(Modifier.height(8.dp))
-        Text("Нет доступных нод", style = NinetyTypography.titleLarge, color = Ink.TextHi)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Добавьте профиль или используйте зарегистрированный WARP Direct.",
-            style = NinetyTypography.bodyMedium,
-            color = Ink.TextMid,
-        )
-    }
-}
-
-@Composable
-private fun AutoCard(
+private fun DesktopAutoRow(
     selected: Boolean,
     effectiveName: String?,
     ping: Int?,
@@ -204,123 +223,180 @@ private fun AutoCard(
     onClick: () -> Unit,
 ) {
     val pack = NinetyState.pack
-    val shape = RoundedCornerShape(16.dp)
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(
-                if (selected) Brush.horizontalGradient(0f to pack.accentSoft, 0.45f to Ink.Ink1, 1f to Ink.Ink1)
-                else SolidColor(Ink.Ink1),
-                shape,
-            )
-            .border(1.dp, if (selected) pack.accentSoft else Ink.Line2, shape)
-            .topHairline(
-                color = if (selected) pack.accent else Color.White,
-                alpha = if (selected) 0.5f else if (pack.palette.isLight) 0.42f else 0.08f,
-            )
-            .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 15.dp),
+        Modifier.fillMaxWidth().height(72.dp)
+            .background(if (selected) Brush.horizontalGradient(listOf(pack.accentSoft, Ink.Ink1, Ink.Ink1)) else SolidColor(Ink.Ink1))
+            .border(1.dp, if (selected) pack.accent else Ink.Line1)
+            .clickable { onClick() }.padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(11.dp))
-                .background(pack.accentSoft)
-                .border(1.dp, pack.accentSoft, RoundedCornerShape(11.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(NinetyIcons.Refresh, null, tint = pack.accentBright, modifier = Modifier.size(19.dp))
-        }
-        Spacer(Modifier.width(13.dp))
-        Column(Modifier.weight(1f)) {
+        Box(Modifier.size(8.dp).background(if (selected) Ink.Ok else Ink.TextFaint, CircleShape))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1.4f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Авто", color = Ink.TextHi, style = NinetyTypography.titleMedium)
-                Spacer(Modifier.width(8.dp))
-                Text("NATIVE URLTEST", style = KickerStyle, color = pack.accent)
+                Text("Авто", style = NinetyTypography.titleMedium, color = Ink.TextHi)
+                Spacer(Modifier.width(9.dp))
+                FleetBadge("NATIVE URLTEST", selected)
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                when {
-                    effectiveName != null -> "Сейчас → $effectiveName"
-                    phase == ProbePhase.Testing -> "Проверяю доступные ноды…"
-                    else -> "Выбор выполняет штатная группа sing-box auto"
-                },
+                effectiveName?.let { "Сейчас → $it" }
+                    ?: if (phase == ProbePhase.Testing) "Выполняется замер" else "Ожидание результата auto-group",
+                style = MonoStyle,
+                color = if (effectiveName != null) pack.accentBright else Ink.TextLo,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        DesktopMeta("POLICY", "URLTEST", Modifier.width(92.dp))
+        DesktopMeta("STATE", phaseLabel(phase).uppercase(), Modifier.width(104.dp))
+        Box(Modifier.width(86.dp), contentAlignment = Alignment.CenterEnd) { PingPill(ping) }
+    }
+}
+
+@Composable
+private fun DesktopNodeRow(
+    node: Node,
+    selected: Boolean,
+    effective: Boolean,
+    ping: Int?,
+    onClick: () -> Unit,
+) {
+    val pack = NinetyState.pack
+    Row(
+        Modifier.fillMaxWidth().height(70.dp)
+            .background(if (selected) Brush.horizontalGradient(listOf(pack.accentSoft, Ink.Ink1, Ink.Ink1)) else SolidColor(Ink.Ink1))
+            .border(1.dp, if (selected || effective) pack.accentSoft else Ink.Line1)
+            .clickable { onClick() }.padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).background(if (effective) Ink.Ok else if (selected) pack.accent else Ink.TextFaint, CircleShape))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1.45f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(node.name.ifBlank { node.host }, style = NinetyTypography.titleMedium, color = Ink.TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (effective) {
+                    Spacer(Modifier.width(8.dp))
+                    FleetBadge("IN USE", true)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text("${node.host}:${node.port}", style = MonoStyle, color = Ink.TextLo, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        DesktopMeta("PROTOCOL", node.proto.uppercase(), Modifier.width(100.dp))
+        DesktopMeta("SECURITY", node.security.uppercase().takeIf { it != "NONE" } ?: "PLAIN", Modifier.width(104.dp))
+        DesktopMeta("TRANSPORT", node.type.uppercase(), Modifier.width(100.dp))
+        Box(Modifier.width(86.dp), contentAlignment = Alignment.CenterEnd) { PingPill(ping) }
+    }
+}
+
+@Composable
+private fun DesktopMeta(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, style = KickerStyle, color = Ink.TextFaint)
+        Spacer(Modifier.height(4.dp))
+        Text(value, style = MonoStyle, color = Ink.TextMid, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun CompactAutoCard(
+    selected: Boolean,
+    effectiveName: String?,
+    ping: Int?,
+    phase: ProbePhase,
+    onClick: () -> Unit,
+) {
+    val pack = NinetyState.pack
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape)
+            .background(if (selected) Brush.horizontalGradient(listOf(pack.accentSoft, Ink.Ink1, Ink.Ink1)) else SolidColor(Ink.Ink1))
+            .border(1.dp, if (selected) pack.accentSoft else Ink.Line1, shape)
+            .clickable { onClick() }.padding(horizontal = 15.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(pack.accentSoft), contentAlignment = Alignment.Center) {
+            Icon(NinetyIcons.Refresh, null, tint = pack.accentBright, modifier = Modifier.size(19.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Авто · NATIVE URLTEST", color = Ink.TextHi, style = NinetyTypography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                effectiveName?.let { "Сейчас → $it" } ?: phaseLabel(phase),
                 color = if (effectiveName != null) pack.accentBright else Ink.TextLo,
                 style = MonoStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(9.dp))
         PingPill(ping)
     }
 }
 
 @Composable
-private fun NodeCard(node: Node, selected: Boolean, ping: Int?, onClick: () -> Unit) {
+private fun CompactNodeCard(node: Node, selected: Boolean, effective: Boolean, ping: Int?, onClick: () -> Unit) {
     val pack = NinetyState.pack
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(14.dp)
     Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(
-                if (selected) Brush.verticalGradient(0f to pack.accentSoft, 0.35f to Ink.Ink1, 1f to Ink.Ink1)
-                else SolidColor(Ink.Ink1),
-                shape,
-            )
-            .border(1.dp, if (selected) pack.accentSoft else Ink.Line2, shape)
-            .topHairline(
-                color = if (selected) pack.accent else Color.White,
-                alpha = if (selected) 0.5f else if (pack.palette.isLight) 0.42f else 0.08f,
-            )
-            .clickable { onClick() }
-            .padding(15.dp),
+        Modifier.fillMaxWidth().clip(shape)
+            .background(if (selected) Brush.verticalGradient(listOf(pack.accentSoft, Ink.Ink1, Ink.Ink1)) else SolidColor(Ink.Ink1))
+            .border(1.dp, if (selected || effective) pack.accentSoft else Ink.Line1, shape)
+            .clickable { onClick() }.padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(10.dp).clip(CircleShape)
-                    .background(if (selected) pack.accent else Ink.Line3),
-            )
-            Spacer(Modifier.width(11.dp))
-            Text(
-                node.name.ifBlank { node.host },
-                color = Ink.TextHi,
-                style = NinetyTypography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            Box(Modifier.size(8.dp).background(if (effective) Ink.Ok else if (selected) pack.accent else Ink.TextFaint, CircleShape))
+            Spacer(Modifier.width(10.dp))
+            Text(node.name.ifBlank { node.host }, color = Ink.TextHi, style = NinetyTypography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
             PingPill(ping)
         }
-        Spacer(Modifier.height(11.dp))
+        Spacer(Modifier.height(10.dp))
+        Text("${node.host}:${node.port}", color = Ink.TextLo, style = MonoStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            NodeMeta("ПРОТОКОЛ", node.proto.uppercase())
-            NodeMeta("ЗАЩИТА", node.security.uppercase().takeIf { it != "NONE" } ?: "PLAIN")
-            NodeMeta("ТРАНСПОРТ", node.type.uppercase())
+            CompactMeta("PROTOCOL", node.proto.uppercase())
+            CompactMeta("SECURITY", node.security.uppercase().takeIf { it != "NONE" } ?: "PLAIN")
+            CompactMeta("TRANSPORT", node.type.uppercase())
         }
-        Spacer(Modifier.height(11.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.Line1))
-        Spacer(Modifier.height(9.dp))
-        Text(
-            "${node.host}:${node.port}",
-            color = Ink.TextLo,
-            style = MonoStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
 @Composable
-private fun NodeMeta(label: String, value: String) {
+private fun CompactMeta(label: String, value: String) {
     Column {
         Text(label, style = KickerStyle, color = Ink.TextFaint)
         Spacer(Modifier.height(3.dp))
         Text(value, style = MonoStyle, color = Ink.TextMid, maxLines = 1)
+    }
+}
+
+@Composable
+private fun FleetBadge(text: String, active: Boolean) {
+    Text(
+        text,
+        style = KickerStyle,
+        color = if (active) NinetyState.pack.accentBright else Ink.TextMid,
+        modifier = Modifier.background(if (active) NinetyState.pack.accentSoft else Ink.Ink3, RoundedCornerShape(4.dp))
+            .border(1.dp, if (active) NinetyState.pack.accent else Ink.Line2, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun EmptyNodes(modifier: Modifier = Modifier) {
+    Column(modifier.padding(top = 38.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(72.dp).background(Ink.Ink2).border(1.dp, Ink.Line2), contentAlignment = Alignment.Center) {
+            Icon(NinetyIcons.Nodes, null, tint = Ink.TextFaint, modifier = Modifier.size(30.dp))
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("NODES · EMPTY", style = KickerStyle, color = Ink.TextFaint)
+        Spacer(Modifier.height(8.dp))
+        Text("Нет доступных нод", style = NinetyTypography.titleLarge, color = Ink.TextHi)
+        Spacer(Modifier.height(8.dp))
+        Text("Добавьте профиль или используйте зарегистрированный WARP Direct.", style = NinetyTypography.bodyMedium, color = Ink.TextMid)
     }
 }
 
@@ -335,10 +411,7 @@ private fun TestAllFab(testing: Boolean, modifier: Modifier = Modifier, onClick:
         label = "nodesFabAngle",
     )
     Box(
-        modifier
-            .size(54.dp)
-            .clip(CircleShape)
-            .background(pack.accent)
+        modifier.size(54.dp).clip(CircleShape).background(pack.accent)
             .border(1.dp, pack.accentBright, CircleShape)
             .clickable(enabled = !testing) { onClick() },
         contentAlignment = Alignment.Center,
@@ -354,9 +427,7 @@ private fun TestAllFab(testing: Boolean, modifier: Modifier = Modifier, onClick:
 
 private fun select(context: Context, id: String) {
     Store.setActive(id)
-    if (VpnController.isActive && TunnelModes.current().requiresProxySelection) {
-        NinetyVpnService.reload(context)
-    }
+    if (VpnController.isActive && TunnelModes.current().requiresProxySelection) NinetyVpnService.reload(context)
 }
 
 private fun nodeByTag(nodes: List<Node>, tag: String?): Node? =
@@ -380,21 +451,11 @@ private fun pingGrade(ms: Int?): Int = when {
 
 private fun validPing(ms: Int?): Boolean = ms != null && ms in 1 until 65_000
 
-private fun probeSummary(count: Int, connected: Boolean, phase: ProbePhase, error: String?): String = when {
-    count == 0 -> "Профиль не выбран или не содержит поддерживаемых нод"
-    !connected -> "$count ${plural(count)} · пинги измеряются после запуска туннеля"
-    phase == ProbePhase.Testing -> "$count ${plural(count)} · выполняется новый замер"
-    phase == ProbePhase.Partial -> "$count ${plural(count)} · получена только часть результатов"
-    phase == ProbePhase.Error -> error ?: "$count ${plural(count)} · ошибка проверки"
-    else -> "$count ${plural(count)} · штатный Auto sing-box"
-}
-
-private fun plural(value: Int): String {
-    val mod10 = value % 10
-    val mod100 = value % 100
-    return when {
-        mod10 == 1 && mod100 != 11 -> "нода"
-        mod10 in 2..4 && mod100 !in 12..14 -> "ноды"
-        else -> "нод"
-    }
+private fun phaseLabel(phase: ProbePhase): String = when (phase) {
+    ProbePhase.Offline -> "offline"
+    ProbePhase.Connecting -> "connecting"
+    ProbePhase.Testing -> "testing"
+    ProbePhase.Partial -> "partial"
+    ProbePhase.Ready -> "ready"
+    ProbePhase.Error -> "error"
 }
