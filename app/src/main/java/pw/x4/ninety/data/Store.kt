@@ -20,6 +20,8 @@ import pw.x4.ninety.data.persistence.StorageSnapshot
  *
  * Once Room migration is verified, plaintext legacy JSON is deleted and no longer written.
  * Mutations queue an immutable graph snapshot to the serialized background persistence writer.
+ * Worker-facing reads share the same monitor as mutations, so VPN reloads never observe a partial
+ * profile refresh.
  */
 object Store {
     private lateinit var nodesFile: File
@@ -93,24 +95,47 @@ object Store {
     val selection: ProxySelection?
         get() = ProxySelection.fromPersisted(activeId)
 
-    fun activeNode(): Node? = nodes.firstOrNull { it.id == activeId }
-    val isAutoActive: Boolean get() = selection == ProxySelection.Auto
+    val isAutoActive: Boolean
+        get() = selection == ProxySelection.Auto
 
+    @Synchronized
+    fun activeSelectionId(): String? = activeId
+
+    @Synchronized
+    fun activeProfileIdValue(): String? = activeProfileId
+
+    @Synchronized
+    fun profilesSnapshot(): List<Profile> = profiles.toList()
+
+    @Synchronized
+    fun activeNode(): Node? = nodes.firstOrNull { it.id == activeId }
+
+    @Synchronized
     fun hasRunnableSelection(): Boolean = when (selection) {
         ProxySelection.Auto -> supportedActiveNodes().isNotEmpty()
         is ProxySelection.Node -> activeNode()?.supported == true
         null -> false
     }
 
+    @Synchronized
     fun activeNodeLabel(): String? = when {
         isAutoActive -> "Авто"
         else -> activeNode()?.let { it.name.ifBlank { it.host } }
     }
 
+    @Synchronized
     fun activeProfile(): Profile? = profiles.firstOrNull { it.id == activeProfileId }
+
+    @Synchronized
     fun nodesOf(profileId: String?): List<Node> = nodes.filter { it.subId == profileId }
+
+    @Synchronized
     fun activeProfileNodes(): List<Node> = nodesOf(activeProfileId)
+
+    @Synchronized
     fun supportedActiveNodes(): List<Node> = activeProfileNodes().filter { it.supported }
+
+    @Synchronized
     fun nodeCount(profileId: String): Int = nodes.count { it.subId == profileId }
 
     @Synchronized
